@@ -8,6 +8,7 @@ pydantic-settings==2.1.0
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 alembic==1.13.1
+aiosqlite==0.19.0  # Async SQLite support if needed
 
 # Data Processing
 pandas==2.2.0
@@ -29,6 +30,7 @@ websockets==12.0
 # Utilities
 python-dotenv==1.0.1
 python-multipart==0.0.6
+pyyaml==6.0.1  # For loading prompts configuration
 
 # Testing
 pytest==7.4.4

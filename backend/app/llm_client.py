@@ -94,15 +94,33 @@ class LLMClient:
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens or self.max_tokens
 
+        # Log the request (truncated for readability)
+        logger.debug("=" * 80)
+        logger.debug(f"LLM REQUEST ({self.model})")
+        logger.debug("-" * 80)
+        if system_prompt:
+            logger.debug(f"SYSTEM: {system_prompt[:200]}..." if len(system_prompt) > 200 else f"SYSTEM: {system_prompt}")
+        logger.debug(f"USER: {prompt[:500]}..." if len(prompt) > 500 else f"USER: {prompt}")
+        logger.debug(f"Params: temp={temp}, max_tokens={tokens}")
+        logger.debug("-" * 80)
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
         if self.provider in ["openrouter", "openai"]:
-            return await self._complete_openai_format(messages, temp, tokens)
+            response = await self._complete_openai_format(messages, temp, tokens)
         elif self.provider == "anthropic":
-            return await self._complete_anthropic_format(prompt, system_prompt, temp, tokens)
+            response = await self._complete_anthropic_format(prompt, system_prompt, temp, tokens)
+        else:
+            response = ""
+
+        # Log the response
+        logger.debug(f"RESPONSE: {response[:500]}..." if len(response) > 500 else f"RESPONSE: {response}")
+        logger.debug("=" * 80)
+
+        return response
 
     async def _complete_openai_format(
         self,
@@ -130,7 +148,39 @@ class LLMClient:
                 response.raise_for_status()
 
             result = response.json()
-            return result["choices"][0]["message"]["content"]
+
+            # Debug logging for response structure
+            logger.debug(f"API Response keys: {result.keys()}")
+            if "choices" in result and len(result["choices"]) > 0:
+                choice = result["choices"][0]
+                logger.debug(f"Choice keys: {choice.keys()}")
+                if "message" in choice:
+                    message = choice["message"]
+                    logger.debug(f"Message keys: {message.keys()}")
+
+                    # Get content
+                    content = message.get("content", "") or ""
+                    logger.debug(f"Content length: {len(content)}")
+
+                    # For thinking models (like Kimi-K2), check reasoning field
+                    reasoning = message.get("reasoning", "") or ""
+                    if reasoning:
+                        logger.debug(f"Reasoning length: {len(reasoning)}")
+                        logger.debug(f"Reasoning preview: {reasoning[:200]}")
+
+                    # If content is empty but reasoning exists, the model might have
+                    # put the actual response in reasoning instead
+                    if not content and reasoning:
+                        logger.info("Content empty, using reasoning field instead")
+                        return reasoning
+
+                    return content
+                else:
+                    logger.warning(f"No 'message' in choice. Choice: {choice}")
+                    return ""
+            else:
+                logger.warning(f"No choices in result. Result: {result}")
+                return ""
 
     async def _complete_anthropic_format(
         self,
@@ -203,7 +253,7 @@ def get_llm_client(
     Args:
         model: Specific model to use (overrides defaults)
         purpose: "writer" for persona generation, "citizen" for agents,
-                "utility" for helper tasks
+                "moderator" for moderator agent, "utility" for helper tasks
 
     Returns:
         Configured LLMClient instance
@@ -222,6 +272,11 @@ def get_llm_client(
         return LLMClient(
             model=settings.CITIZEN_MODEL,
             temperature=settings.TEMPERATURE
+        )
+    elif purpose == "moderator":
+        return LLMClient(
+            model=settings.MODERATOR_MODEL,
+            temperature=0.5  # Moderate temp for facilitation
         )
     elif purpose == "utility":
         return LLMClient(

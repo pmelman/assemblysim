@@ -14,6 +14,7 @@ import asyncio
 import random
 
 from app.llm_client import get_llm_client
+from app.prompt_loader import get_writer_prompt
 from app.data.gss_labels import (
     get_label,
     format_value,
@@ -61,45 +62,7 @@ BOT_LAST_NAMES = [
 # =============================================================================
 # WRITER LLM PROMPTS
 # =============================================================================
-
-WRITER_SYSTEM_PROMPT = """You are an expert at creating realistic, nuanced character profiles for deliberative democracy simulations. Your task is to convert demographic and attitudinal survey data into a rich persona that an AI can embody during a policy deliberation.
-
-CRITICAL GUIDELINES:
-
-1. FOCUS ON VALUES AND WORLDVIEW
-   - Derive the persona's core values from their survey responses
-   - Explain WHY they might hold their views based on life experience
-   - Connect political positions to underlying moral foundations
-
-2. AVOID STEREOTYPES
-   - NEVER assign accents, dialects, or speech patterns based on demographics
-   - NEVER use cultural stereotypes or caricatures
-   - A conservative can support some liberal policies; a liberal can have traditional values
-   - People are complex - show internal tensions and nuance
-
-3. ACKNOWLEDGE UNCERTAINTY
-   - If a survey value is missing (marked as "Unknown" or "Not available"), instruct the persona to be "open-minded" or "undecided" on that topic
-   - Don't invent strong opinions for missing data
-
-4. KEEP IT GROUNDED
-   - Base all characteristics on the actual survey data provided
-   - The persona should feel like a real person, not a political archetype
-
-5. DELIBERATION INSTRUCTIONS
-   - Include guidance for how to behave in a deliberative assembly
-   - Emphasize listening, engaging with evidence, and staying true to values
-
-OUTPUT FORMAT:
-Return a valid JSON object with these exact fields:
-{
-    "name": "A realistic first name appropriate to demographics",
-    "system_prompt": "The full system prompt for the AI agent (200-400 words)",
-    "background_summary": "A 2-3 sentence summary for display to users",
-    "key_values": ["value1", "value2", "value3"],
-    "demographic_tags": ["tag1", "tag2", "tag3"]
-}
-
-Ensure the JSON is valid and properly escaped."""
+# System prompt now loaded from prompts.yaml via get_writer_prompt()
 
 
 WRITER_USER_TEMPLATE = """Create a persona from this General Social Survey respondent data:
@@ -162,10 +125,15 @@ class PersonaGenerator:
             # Call the Writer LLM
             response = await self.llm.complete(
                 prompt=prompt,
-                system_prompt=WRITER_SYSTEM_PROMPT,
+                system_prompt=get_writer_prompt(),
                 temperature=0.7,
                 max_tokens=1500
             )
+
+            # Check if response is empty
+            if not response or not response.strip():
+                logger.error("Empty response from Writer LLM")
+                return self._create_fallback_persona(row)
 
             # Parse the JSON response
             persona = self._parse_response(response, row)
@@ -176,7 +144,7 @@ class PersonaGenerator:
             return persona
 
         except Exception as e:
-            logger.error(f"Error generating persona: {e}")
+            logger.error(f"Error generating persona: {e}", exc_info=True)
             # Return a fallback persona
             return self._create_fallback_persona(row)
 
@@ -333,11 +301,21 @@ class PersonaGenerator:
         """Parse the LLM response into a persona dictionary."""
         # Try to extract JSON from the response
         try:
+            original_response = response  # Keep for debugging
+
             # Handle potential markdown code blocks
             if '```json' in response:
                 response = response.split('```json')[1].split('```')[0]
             elif '```' in response:
                 response = response.split('```')[1].split('```')[0]
+
+            # Try to find JSON object in the response
+            # Look for { and } to extract just the JSON part
+            if '{' in response and '}' in response:
+                start = response.find('{')
+                # Find matching closing brace
+                end = response.rfind('}') + 1
+                response = response[start:end]
 
             persona = json.loads(response.strip())
 
@@ -350,7 +328,9 @@ class PersonaGenerator:
             return persona
 
         except (json.JSONDecodeError, ValueError) as e:
-            logger.warning(f"Failed to parse LLM response: {e}")
+            logger.error(f"Failed to parse LLM response: {e}")
+            logger.error(f"Response preview (first 500 chars): {original_response[:500]}")
+            logger.error(f"Response preview (last 200 chars): {original_response[-200:]}")
             return self._create_fallback_persona(row)
 
     def _create_fallback_persona(self, row: pd.Series) -> dict:

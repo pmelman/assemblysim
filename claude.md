@@ -6,25 +6,34 @@ This document helps AI assistants (like you!) understand and work on this codeba
 
 **Silicon Citizens' Assembly** is a multi-agent LLM deliberative democracy simulation system. It creates AI personas from real General Social Survey (GSS) data and orchestrates structured policy deliberation.
 
-**Current Status**: Phase 1 complete (Citizen Forge working)
+**Current Status**: Phase 2 complete (Full backend with deliberation engine working)
 **Working Directory**: `/Users/paulmelman/Claude/Assembly Sim/assemblysim`
 
 ## Quick Context
 
-### What We've Built (Phase 0-1)
+### What We've Built (Phase 0-2)
 
+**Phase 1 - Citizen Forge:**
 1. **GSS Data Pipeline**: Load and parse 567MB Stata file with 72k respondents
 2. **Stratified Sampling**: Select representative citizens matching US demographics
 3. **Persona Generation**: LLM converts GSS rows → rich, nuanced character profiles
 4. **Bot Naming**: Assigns tech/sci-fi themed last names (Turing, Gibson, Trinity, etc.)
 5. **Validation**: Anti-stereotype checks, quality metrics, diversity analysis
 
-### What's Next (Phase 2+)
+**Phase 2 - Core Backend:**
+1. **FastAPI Application**: REST API with WebSocket support
+2. **SQLite Database**: SQLAlchemy models for assemblies, citizens, messages, reports
+3. **Deliberation Engine**: Multi-agent orchestration without LangGraph
+4. **Agent System**: Citizen, Moderator, and Recorder agents
+5. **Perplexity Integration**: Research briefing books
+6. **Prompt Configuration**: YAML-based prompt management
 
-- FastAPI backend with PostgreSQL
-- LangGraph multi-agent deliberation system
-- Perplexity integration for research briefings
+### What's Next (Phase 3+)
+
+- LangGraph integration (optional enhancement)
+- Group-based deliberation (currently all citizens together)
 - Next.js frontend for real-time viewing
+- Enhanced fact-checking and citations
 
 ## Architecture Map
 
@@ -38,17 +47,40 @@ assemblysim/                           # Project root (working directory)
 │   ├── app/
 │   │   ├── config.py                  # Pydantic settings, loads from ../.env
 │   │   ├── llm_client.py              # Unified LLM client (OpenRouter/OpenAI/Anthropic)
+│   │   ├── prompt_loader.py           # Loads prompts from prompts.yaml
+│   │   ├── prompts.yaml               # All system prompts (YAML config)
+│   │   ├── main.py                    # FastAPI application entry point
 │   │   ├── data/
 │   │   │   ├── gss_loader.py          # GSSLoader: loads Stata files
 │   │   │   └── gss_labels.py          # Label mappings for GSS variables
-│   │   └── citizen_forge/
-│   │       ├── __init__.py            # Module exports
-│   │       ├── sampler.py             # StratifiedSampler: quota-based sampling
-│   │       ├── persona_generator.py   # PersonaGenerator: LLM generation
-│   │       └── validator.py           # PersonaValidator: quality checks
-│   ├── demo_citizen_forge.py          # Main demo script (RUNNABLE)
+│   │   ├── citizen_forge/
+│   │   │   ├── sampler.py             # StratifiedSampler: quota-based sampling
+│   │   │   ├── persona_generator.py   # PersonaGenerator: LLM generation
+│   │   │   └── validator.py           # PersonaValidator: quality checks
+│   │   ├── models/
+│   │   │   ├── database.py            # SQLAlchemy engine, session management
+│   │   │   ├── models.py              # DB models (Assembly, Citizen, Message, etc.)
+│   │   │   └── schemas.py             # Pydantic schemas for API
+│   │   ├── api/
+│   │   │   ├── assemblies.py          # REST API endpoints
+│   │   │   ├── websocket.py           # WebSocket for real-time updates
+│   │   │   └── services.py            # Background tasks, business logic
+│   │   ├── agents/
+│   │   │   ├── citizen_agent.py       # CitizenAgent: deliberation behavior
+│   │   │   ├── moderator_agent.py     # ModeratorAgent: facilitation
+│   │   │   └── recorder_agent.py      # RecorderAgent: summarization
+│   │   ├── knowledge/
+│   │   │   └── perplexity_client.py   # Perplexity API for briefings
+│   │   └── orchestration/
+│   │       └── deliberation_engine.py # Main deliberation workflow
+│   ├── demo_citizen_forge.py          # Phase 1 demo (persona generation only)
+│   ├── demo_deliberation.py           # Phase 2 demo (full deliberation)
+│   ├── demo_verbose.py                # Demo with LLM logging
+│   ├── assemblysim.db                 # SQLite database (gitignored)
+│   ├── DELIBERATION_GUIDE.md          # API usage guide
+│   ├── PROMPTS_GUIDE.md               # Prompt customization guide
 │   └── requirements.txt               # Python dependencies
-└── README.md                          # Human documentation
+└── README.md                          # Main documentation
 ```
 
 ### Data Location (External)
@@ -63,447 +95,357 @@ assemblysim/                           # Project root (working directory)
 
 ## Key Files Deep Dive
 
-### `config.py` - Configuration System
+### Phase 1 Files (Persona Generation)
 
-**Purpose**: Centralized settings using pydantic-settings
+#### `config.py` - Configuration System
+- Uses pydantic-settings with `.env` file at `assemblysim/.env`
+- Model selection: WRITER_MODEL, CITIZEN_MODEL, MODERATOR_MODEL, UTILITY_MODEL
+- Database URL, API keys, LLM parameters
 
-**Important Details**:
-- `.env` file is at `assemblysim/.env` (one level up from backend/)
-- Config class has `env_file = Path(__file__).parent.parent.parent / ".env"`
-- Uses `@lru_cache()` for `get_settings()` singleton pattern
-- GSS data path is relative: `DATA_DIR / "GSS_stata" / "gss7224_r2.dta"`
+#### `gss_loader.py` - Data Loading
+- `GSSLoader.load(years=None)` returns pandas DataFrame
+- Only loads ~45 CORE_VARIABLES to save memory
+- Always check for NaN values with `pd.notna()`
 
-**Key Settings**:
-```python
-LLM_PROVIDER: str = "openrouter"  # or "openai", "anthropic"
-OPENROUTER_API_KEY: str
-WRITER_MODEL: str = "anthropic/claude-3.5-sonnet"
-WRITER_MAX_TOKENS: int = 1000
-DEFAULT_NUM_CITIZENS: int = 40
-```
+#### `sampler.py` - Stratified Sampling
+- `StratifiedSampler(target_n=40).sample(strategy='stratified')`
+- DEFAULT_QUOTAS for political/race/age balance
+- Returns representative sample from GSS
 
-### `gss_loader.py` - Data Loading
+#### `persona_generator.py` - LLM Persona Creation
+- Uses `get_writer_prompt()` from prompt_loader
+- `generate_batch(df)` creates personas from GSS rows
+- Assigns bot-themed last names
+- Returns list of persona dicts with name, system_prompt, key_values, etc.
 
-**Purpose**: Load and validate GSS Stata files
+### Phase 2 Files (Backend & Deliberation)
 
-**Key Class**: `GSSLoader`
-- `CORE_VARIABLES`: List of ~45 GSS variables we use
-- `load(years=None)`: Returns pandas DataFrame
-- `validate_data()`: Checks for required columns
+#### `main.py` - FastAPI Application
+- FastAPI app with CORS middleware
+- Includes assemblies_router and websocket_router
+- Health check at `/health`
+- Lifespan events for database initialization
 
-**Important**:
-- GSS data is HUGE (72k rows, 6,904 vars)
-- We only load CORE_VARIABLES to save memory
-- Use `years=[2022]` to filter to recent data
-- NaN values are common - always use `pd.notna()` checks
+#### `models/database.py` - Database Layer
+- SQLAlchemy engine with SQLite
+- `get_db()` dependency for FastAPI routes
+- `get_db_session()` context manager for background tasks
+- `init_db()` creates all tables
 
-### `gss_labels.py` - Variable Mappings
+#### `models/models.py` - Database Models
+- **Assembly**: topic, status, num_citizens, timestamps
+- **Citizen**: name, system_prompt, gss_data, final_vote
+- **DeliberationGroup**: group assignments, summaries
+- **Message**: deliberation transcript (role, content, phase, round)
+- **BriefingBook**: Perplexity research content
+- **Report**: executive summary, vote tally, themes
+- **AssemblyStatus** enum: PENDING → GENERATING_CITIZENS → CITIZENS_READY → READY → DELIBERATING → VOTING → COMPLETED
 
-**Purpose**: Human-readable labels for GSS coded values
+#### `models/schemas.py` - Pydantic Schemas
+- Request schemas: AssemblyCreateRequest, BriefingGenerateRequest
+- Response schemas: AssemblyResponse, CitizenResponse, ReportResponse, etc.
+- WSMessage for WebSocket communication
 
-**Key Functions**:
-- `format_value(variable, code)`: Gets label for a code
-- `get_age_group(age)`: Converts age → age group string
-- `format_income_bracket(code)`: Income code → "$X - $Y"
+#### `api/assemblies.py` - REST Endpoints
+- POST /assemblies - Create assembly, start citizen generation
+- GET /assemblies/{id} - Get assembly details
+- POST /assemblies/{id}/briefing - Generate briefing book
+- POST /assemblies/{id}/start - Start deliberation
+- GET /assemblies/{id}/messages - Get transcript
+- GET /assemblies/{id}/report - Get final report
 
-**Key Dicts**:
-- `POLVIEWS_LABELS`: 1=Extremely Liberal ... 7=Extremely Conservative
-- `SEX_LABELS`, `RACE_LABELS`, `REGION_LABELS`, etc.
+#### `api/websocket.py` - Real-time Updates
+- `ConnectionManager` class manages WebSocket connections
+- `/ws/assemblies/{id}` endpoint for real-time updates
+- `broadcast_to_assembly()` function for status updates
 
-### `sampler.py` - Stratified Sampling
+#### `api/services.py` - Background Tasks
+- `create_assembly_with_citizens()` - Generate personas in background
+- `generate_briefing_for_assembly()` - Perplexity research
+- `run_deliberation_for_assembly()` - Full deliberation workflow
 
-**Purpose**: Select representative citizens from GSS data
+#### `orchestration/deliberation_engine.py` - Main Workflow
+- `DeliberationEngine` class orchestrates complete assembly
+- Flow: Opening → Rounds → Voting → Report
+- Each round: Moderator opens → Citizens respond → Recorder summarizes
+- Saves all messages to database
+- Broadcasts updates via WebSocket
 
-**Key Class**: `StratifiedSampler`
-- `DEFAULT_QUOTAS`: Target distributions for political/race/age groups
-- `prepare_data()`: Cleans and groups GSS data
-- `sample(strategy='stratified')`: Returns sampled DataFrame
+#### `agents/citizen_agent.py` - Citizen Behavior
+- `CitizenAgent(citizen_id, name, system_prompt, briefing_content)`
+- `respond(discussion_context)` - Generate deliberation response
+- `cast_vote(recommendations)` - Vote with reasoning
+- Uses `get_citizen_instructions()` from prompt_loader
 
-**Sampling Strategies**:
-- `'stratified'`: Proportional to quotas (default)
-- `'quota'`: Exact quota matching
-- `'random'`: Pure random sampling
+#### `agents/moderator_agent.py` - Facilitation
+- `ModeratorAgent(assembly_topic)`
+- `open_assembly()`, `open_round()`, `prompt_citizen()`
+- `transition_to_voting()`, `close_assembly()`
+- Uses `get_moderator_prompt()` from prompt_loader
 
-**Usage Pattern**:
-```python
-sampler = StratifiedSampler(gss_data=df, target_n=40)
-sampler.prepare_data()
-sample_df = sampler.sample(strategy='stratified', seed=42)
-```
+#### `agents/recorder_agent.py` - Analysis
+- `RecorderAgent(assembly_topic)`
+- `summarize_round()` - Round summaries
+- `identify_themes()`, `generate_consensus_summary()`
+- `generate_final_summary()` - Complete report
+- Uses `get_recorder_prompt()` from prompt_loader
 
-### `persona_generator.py` - LLM Persona Creation
+#### `knowledge/perplexity_client.py` - Research
+- `PerplexityClient().generate_briefing_book(topic, depth)`
+- Returns structured briefing with overview, arguments for/against, policy options
+- Fallback mode when API unavailable
+- Uses `get_perplexity_prompt()` from prompt_loader
 
-**Purpose**: Convert GSS rows into rich LLM personas
+#### `prompt_loader.py` - Prompt Management
+- Loads all system prompts from `prompts.yaml`
+- `get_writer_prompt()`, `get_moderator_prompt()`, etc.
+- Cached with @lru_cache for performance
 
-**Key Class**: `PersonaGenerator`
+#### `prompts.yaml` - Prompt Configuration
+- All static system prompts in one YAML file
+- Sections: writer, moderator, recorder, citizen, perplexity
+- Edit without touching code!
 
-**Main Methods**:
-- `generate_persona(row)`: Single persona from GSS Series
-- `generate_batch(df, max_concurrent=5)`: Batch generation with rate limiting
-- `_assign_bot_last_names(personas)`: Add unique sci-fi/tech last names
+## Model Configuration
 
-**Bot Last Names**:
-- List of ~60 tech/sci-fi themed surnames
-- Computing pioneers: Turing, Lovelace, Hopper, Shannon, Dijkstra
-- Sci-fi refs: Asimov, Gibson, Deckard, Trinity, Muad'Dib
-- Tech terms: Protocol, Neural, Matrix, Quantum, Circuit
-- Ensures no duplicate full names
+The system uses different models for different tasks (configured in `.env`):
 
-**LLM Prompts**:
-- `WRITER_SYSTEM_PROMPT`: Instructions for persona creation
-  - Emphasizes values over stereotypes
-  - Warns against accents, dialects, caricatures
-  - Requests 200-400 word system prompts
-- `WRITER_USER_TEMPLATE`: Formats GSS data for LLM
-
-**Output Format**:
-```python
-{
-    "name": "Marcus Shannon",  # First name from LLM + bot last name
-    "system_prompt": "You are Marcus...",  # 200-400 words
-    "background_summary": "Marcus is...",  # 2-3 sentences
-    "key_values": ["Evidence-based", "Pragmatic", ...],  # 2-5 values
-    "demographic_tags": ["Moderate", "Midwest", ...],
-    "gss_data": {...}  # Original GSS variables
-}
-```
-
-**Error Handling**:
-- Falls back to `_create_fallback_persona()` if LLM fails
-- Parses JSON from LLM response (handles markdown code blocks)
-- Validates required fields
-
-### `validator.py` - Quality Assurance
-
-**Purpose**: Ensure personas are high-quality and non-stereotypical
-
-**Key Class**: `PersonaValidator`
-
-**Stereotype Detection**:
-- `STEREOTYPE_PATTERNS`: Regex list for problematic language
-- Catches: accents ("y'all", "ain't"), stereotypes ("gun-toting"), caricatures
-
-**Validation Checks**:
-- Required fields present (`name`, `system_prompt`, `background_summary`, `key_values`)
-- System prompt length (50-600 words)
-- Mentions deliberation context
-- References persona's values
-- No stereotype patterns
-- Reasonable number of key values (2-5)
-
-**Batch Validation**:
-- `validate_batch(personas)`: Returns pass rate, issues list
-- `check_diversity(personas)`: Checks name uniqueness, value diversity
-
-**Usage**:
-```python
-result = validate_personas(personas)
-# Returns: {'validation': {...}, 'diversity': {...}}
-```
-
-### `llm_client.py` - LLM API Client
-
-**Purpose**: Unified interface for multiple LLM providers
-
-**Key Class**: `LLMClient`
-
-**Supported Providers**:
-- OpenRouter (default): Proxy for many models
-- OpenAI: Direct GPT-4, GPT-4o, etc.
-- Anthropic: Direct Claude models
-
-**Main Method**:
-```python
-async def complete(
-    prompt: str,
-    system_prompt: Optional[str] = None,
-    temperature: float = 0.7,
-    max_tokens: int = 500
-) -> str
-```
-
-**Provider Detection**:
-- Uses `settings.LLM_PROVIDER` ("openrouter", "openai", "anthropic")
-- Falls back based on which API keys are set
-- OpenRouter uses OpenAI-compatible format
-
-**Factory Function**:
-```python
-get_llm_client(purpose="writer")
-# Returns configured LLMClient instance
-# Purpose can be: "writer", "citizen", "utility"
-```
-
-### `demo_citizen_forge.py` - Demo Script
-
-**Purpose**: End-to-end demo of Phase 1 pipeline
-
-**CLI Arguments**:
-- `--num-citizens N`: Number to generate (default: 8)
-- `--dry-run`: Skip LLM calls, show sampling only
-- `--seed N`: Random seed for reproducibility
-- `--verbose`: Show full system prompts
-
-**Workflow**:
-1. Load GSS 2022 data
-2. Stratified sampling
-3. Generate personas (LLM calls)
-4. Display results
-5. Validate quality
-6. Save to `demo_personas.json`
-
-**Usage**:
 ```bash
-cd backend
-python demo_citizen_forge.py --num-citizens 8
+WRITER_MODEL=anthropic/claude-sonnet-4.5      # Persona generation (needs good JSON)
+CITIZEN_MODEL=qwen/qwen3-235b-a22b-2507        # Deliberation (thinking/reasoning)
+MODERATOR_MODEL=anthropic/claude-sonnet-4.5    # Facilitation (neutral, clear)
+UTILITY_MODEL=openai/gpt-4o-mini               # Summaries (fast, cheap)
 ```
+
+Use `get_llm_client(purpose="writer")` to get the right model for each task.
+
+## Common Workflows
+
+### Creating an Assembly
+
+```python
+# 1. Create assembly record
+assembly = Assembly(topic="Topic", num_citizens=8, status=AssemblyStatus.PENDING)
+db.add(assembly)
+db.commit()
+
+# 2. Generate citizens in background
+background_tasks.add_task(create_assembly_with_citizens, assembly.id, 8, 2, "stratified")
+
+# 3. Status transitions:
+# PENDING → GENERATING_CITIZENS → CITIZENS_READY
+
+# 4. Optionally generate briefing
+await generate_briefing_for_assembly(assembly.id)
+# CITIZENS_READY → GENERATING_BRIEFING → READY
+
+# 5. Start deliberation
+await run_deliberation_for_assembly(assembly.id)
+# READY → DELIBERATING → VOTING → COMPLETED
+```
+
+### Running Deliberation
+
+```python
+engine = DeliberationEngine(assembly_id, db, broadcast_callback)
+await engine.run()
+
+# Flow:
+# 1. Load assembly, citizens, briefing
+# 2. Initialize agents (moderator, citizens, recorder)
+# 3. Opening (moderator welcomes)
+# 4. For each round:
+#    - Moderator opens round
+#    - Each citizen responds (with context)
+#    - Recorder summarizes
+# 5. Voting:
+#    - Moderator transitions
+#    - Each citizen casts vote
+# 6. Report generation:
+#    - Recorder generates final summary
+# 7. Complete
+```
+
+### Customizing Prompts
+
+```yaml
+# Edit backend/app/prompts.yaml
+moderator:
+  system: |
+    You are a skilled facilitator...
+    [Your custom instructions]
+```
+
+Changes take effect on next restart. See `PROMPTS_GUIDE.md` for details.
 
 ## Development Patterns
 
-### NaN Handling in Pandas
+### Database Sessions
 
-**CRITICAL**: GSS data has many NaN values. Always check:
+**In API routes:**
+```python
+@router.get("/assemblies/{id}")
+def get_assembly(id: int, db: Session = Depends(get_db)):
+    assembly = db.query(Assembly).filter(Assembly.id == id).first()
+    return assembly
+```
+
+**In background tasks:**
+```python
+async def background_task():
+    with get_db_session() as db:
+        # Auto-commits on success, rollbacks on error
+        assembly = db.query(Assembly).filter(...).first()
+```
+
+### NaN Handling
+
+GSS data has many NaN values:
 
 ```python
-# ❌ BAD - will crash on NaN
+# ❌ BAD
 age = int(row['age'])
 
-# ✅ GOOD - safe conversion
-age = int(row['age']) if pd.notna(row.get('age')) else 'Unknown'
-
-# ✅ BETTER - helper function
-def safe_int(val):
-    if pd.isna(val):
-        return None
-    return int(val)
-
-age_val = safe_int(row.get('age'))
-age = str(age_val) if age_val else 'Unknown'
+# ✅ GOOD
+age = int(row['age']) if pd.notna(row.get('age')) else None
 ```
 
-### Async/Await for LLM Calls
+### Async/Await
 
-All LLM operations are async:
+All LLM calls and deliberation are async:
 
 ```python
-# Single call
-persona = await generator.generate_persona(row)
+# Agent responses
+response = await citizen.respond(context)
 
-# Batch with concurrency limit
-personas = await generator.generate_batch(df, max_concurrent=3)
+# Deliberation
+await run_deliberation(assembly_id, db)
 
 # From sync context
-personas = asyncio.run(generate_personas_from_sample(df))
+import asyncio
+asyncio.run(some_async_function())
 ```
 
-### Configuration Access
-
-Always use the singleton pattern:
+### WebSocket Broadcasting
 
 ```python
-from app.config import get_settings
+from app.api.websocket import broadcast_to_assembly
 
-settings = get_settings()  # Cached, loads .env once
-api_key = settings.OPENROUTER_API_KEY
+await broadcast_to_assembly(assembly_id, {
+    "type": "status_update",
+    "status": "deliberating",
+    "message": "Round 1 starting..."
+})
 ```
 
-### Error Handling Philosophy
+## Testing & Debugging
 
-- **LLM failures**: Fallback to simple persona, don't crash
-- **Data issues**: Log warnings, use "Unknown" for missing values
-- **Validation failures**: Track warnings, only fail on critical errors
-
-## Common Tasks
-
-### Add a New GSS Variable
-
-1. Add to `CORE_VARIABLES` in `gss_loader.py`
-2. Add label mapping to `gss_labels.py` if coded
-3. Update `_format_prompt()` in `persona_generator.py`
-4. Test with `demo_citizen_forge.py --dry-run`
-
-### Change Sampling Strategy
-
-Edit `DEFAULT_QUOTAS` in `sampler.py`:
-
-```python
-DEFAULT_QUOTAS = {
-    'polviews_group': {
-        'Liberal': 0.40,      # Increase liberal representation
-        'Moderate': 0.30,
-        'Conservative': 0.30
-    },
-    # ...
-}
-```
-
-### Add Bot Last Names
-
-Add to `BOT_LAST_NAMES` list in `persona_generator.py`:
-
-```python
-BOT_LAST_NAMES = [
-    # ... existing names ...
-    'YourNewName',
-    'AnotherName',
-]
-```
-
-### Adjust LLM Temperature
-
-In `.env`:
-```bash
-TEMPERATURE=0.9  # More creative
-TEMPERATURE=0.3  # More consistent
-```
-
-Or per-call:
-```python
-response = await llm.complete(prompt, temperature=0.9)
-```
-
-## Testing & Validation
-
-### Quick Test (No API Calls)
+### Quick Tests
 
 ```bash
-python demo_citizen_forge.py --dry-run
+# Test imports
+python -c "from app.main import app; print('OK')"
+
+# Test prompts
+python -c "from app.prompt_loader import get_moderator_prompt; print(get_moderator_prompt()[:100])"
+
+# Test database
+python -c "from app.models.database import init_db; init_db(); print('OK')"
 ```
 
-Shows sampling without LLM generation.
-
-### Full Test (8 Personas)
+### Run Full Demo
 
 ```bash
-python demo_citizen_forge.py --num-citizens 8
+# Quick (6 citizens, 2 rounds, ~5 min)
+python demo_deliberation.py --mode quick
+
+# Full (8 citizens, 3 rounds, with briefing, ~10 min)
+python demo_deliberation.py --mode full
+
+# With verbose LLM logging
+python demo_verbose.py --mode quick
 ```
 
-Generates 8 personas, saves to `demo_personas.json`.
-
-### Check Output
+### API Testing
 
 ```bash
-cat demo_personas.json | jq '.[0]'  # View first persona
-cat demo_personas.json | jq '.[].name'  # List all names
+# Start server
+uvicorn app.main:app --reload
+
+# Create assembly
+curl -X POST http://localhost:8000/assemblies \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "Test", "num_citizens": 6}'
+
+# Check status
+curl http://localhost:8000/assemblies/1
+
+# Start deliberation (after status is READY)
+curl -X POST http://localhost:8000/assemblies/1/start
 ```
-
-### Expected Validation Metrics
-
-- Pass rate: ~95-100%
-- Warnings: <5 total
-- Unique names: 100%
-- Unique values: 20-40
-- Political distribution: Balanced
 
 ## Important Gotchas
 
 ### 1. .env Location
+`.env` is at `assemblysim/.env`, **NOT** `assemblysim/backend/.env`
 
-The `.env` file is at `assemblysim/.env`, **NOT** `assemblysim/backend/.env`.
-
-Config file handles this with:
-```python
-env_file = Path(__file__).parent.parent.parent / ".env"
-```
-
-### 2. GSS Data Path
-
-Data is **outside** the assemblysim directory:
-```
-Assembly Sim/
-├── assemblysim/      # Code here
-└── data/            # Data here
-    └── GSS_stata/
-```
-
-Relative path: `../data/GSS_stata/gss7224_r2.dta`
-
-### 3. Working Directory
-
+### 2. Working Directory
 Always run from `assemblysim/backend/`:
 ```bash
 cd /Users/paulmelman/Claude/Assembly\ Sim/assemblysim/backend
-python demo_citizen_forge.py
 ```
 
-### 4. OpenRouter Model Names
-
+### 3. Model Names
 OpenRouter uses format: `provider/model-name`
-```python
-WRITER_MODEL=anthropic/claude-3.5-sonnet  # ✅ Correct
-WRITER_MODEL=claude-3.5-sonnet  # ❌ Wrong
+```bash
+CITIZEN_MODEL=qwen/qwen3-235b-a22b-2507  # ✅
+CITIZEN_MODEL=qwen3-235b  # ❌
 ```
 
-### 5. Integer Conversion
+### 4. Database File
+SQLite DB is at `backend/assemblysim.db` (gitignored)
 
-GSS data is floats in pandas. Always convert:
-```python
-code = int(row['polviews']) if pd.notna(row.get('polviews')) else None
-```
+### 5. Prompt Caching
+Prompts are cached with `@lru_cache()`. To reload, restart the app.
 
-## Git & Secrets
+### 6. Background Tasks
+Background tasks use their own database sessions via `get_db_session()`, not `get_db()`
 
-### NEVER Commit
+### 7. Empty LLM Responses
+Some models (especially thinking models) may return content in different fields. Check the LLM client logging if responses seem empty.
 
-- `.env` file (has real API keys)
-- `demo_personas.json` (output file)
-- Any file with actual API keys
+## Success Metrics
 
-### Safe to Commit
+Phase 2 is successful when:
+- ✅ API server starts without errors
+- ✅ Demo runs complete deliberation
+- ✅ Citizens generated from GSS data
+- ✅ Deliberation produces transcript and report
+- ✅ Database saves all data correctly
+- ✅ WebSocket broadcasts status updates
+- ✅ Prompts load from YAML
 
-- `.env.example` (template only)
-- All `.py` files
-- `requirements.txt`
-- Documentation
+All metrics currently met! 🎉
 
-## Next Phase Preview (Phase 2)
+## Resources
 
-You'll be working on:
-
-1. **FastAPI Backend**
-   - REST API for assembly management
-   - WebSocket for real-time updates
-   - Database models (PostgreSQL + SQLAlchemy)
-
-2. **LangGraph Integration**
-   - Multi-agent orchestration
-   - State management for deliberations
-   - Agent-to-agent communication
-
-3. **Perplexity Integration**
-   - Research briefing generation
-   - Fact-checking capabilities
-   - Evidence synthesis
-
-## Resources for AI Assistants
-
-- **GSS Variable Docs**: `../data/GSS_stata/claude_summary.txt`
+- **Main README**: `../README.md`
 - **Design Doc**: `../Silicon Assembly - Design Document.md`
 - **Development Plan**: `../DEVELOPMENT_PLAN.md`
-- **Codebook**: `../data/GSS_stata/GSS 2024 Codebook R2.pdf` (large PDF)
+- **Deliberation Guide**: `DELIBERATION_GUIDE.md`
+- **Prompts Guide**: `PROMPTS_GUIDE.md`
+- **GSS Docs**: `../data/GSS_stata/claude_summary.txt`
 
 ## Questions to Ask User
 
 When unclear, ask about:
 
-1. **Sampling**: Should we adjust demographic quotas?
-2. **Validation**: Are stereotype checks too strict/loose?
-3. **LLM Config**: Which model to use for which purpose?
-4. **Output**: What format for saving personas?
-5. **Next Steps**: Ready for Phase 2 or refine Phase 1?
-
-## Success Metrics
-
-Phase 1 is successful when:
-- ✅ Demo runs without errors
-- ✅ 95%+ personas pass validation
-- ✅ No duplicate names
-- ✅ Diverse values across cohort
-- ✅ No stereotypical language detected
-- ✅ Output saved to JSON correctly
-
-All metrics currently met! 🎉
+1. **Models**: Which model for which task?
+2. **Prompts**: Should we adjust agent behavior?
+3. **Features**: Add groups, fact-checking, etc.?
+4. **Performance**: Fewer citizens for speed?
+5. **Next Steps**: Frontend, LangGraph, or enhancements?
 
 ---
 
-**TL;DR for Claude**: This is a working LLM agent system. Phase 1 (persona generation) is complete. Demo script works. Key files: `persona_generator.py`, `sampler.py`, `validator.py`. Run `python demo_citizen_forge.py` from backend/ to see it in action. Next phase is backend API infrastructure.
+**TL;DR for Claude**: Phase 2 complete! Full FastAPI backend with deliberation engine. Citizens deliberate, vote, generate reports. Prompts in YAML. Run `python demo_deliberation.py --mode quick` to see it in action. Next: frontend or advanced features.

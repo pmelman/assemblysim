@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     PERPLEXITY_API_KEY: str = ""
 
-    # Database
-    DATABASE_URL: str = "postgresql://localhost/sca"
+    # Database (SQLite for development, easy migration to PostgreSQL later)
+    DATABASE_URL: str = "sqlite:///./assemblysim.db"
+    DATABASE_ECHO: bool = False  # Set to True for SQL query logging
 
     # LLM Configuration
     LLM_PROVIDER: str = "openrouter"  # "openrouter", "openai", or "anthropic"
@@ -34,7 +35,8 @@ class Settings(BaseSettings):
     # Model selection (OpenRouter model IDs)
     CITIZEN_MODEL: str = "anthropic/claude-3.5-sonnet"  # For persona agents
     WRITER_MODEL: str = "anthropic/claude-3.5-sonnet"   # For persona generation
-    UTILITY_MODEL: str = "openai/gpt-4o-mini"           # For utility tasks
+    MODERATOR_MODEL: str = "anthropic/claude-3.5-sonnet"  # For moderator agent
+    UTILITY_MODEL: str = "openai/gpt-4o-mini"           # For utility tasks (recorder)
 
     # LLM parameters
     TEMPERATURE: float = 0.7
