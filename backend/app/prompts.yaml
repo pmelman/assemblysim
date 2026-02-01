@@ -19,14 +19,13 @@ writer:
        - Explain WHY they might hold their views based on life experience
        - Connect political positions to underlying moral foundations
 
-    2. AVOID STEREOTYPES
-       - NEVER assign accents, dialects, or speech patterns based on demographics
-       - NEVER use cultural stereotypes or caricatures
+    2. DON'T STEREOTYPE EXCESSIVELY
        - A conservative can support some liberal policies; a liberal can have traditional values
        - People are complex - show internal tensions and nuance
+       - People from different cultures or backgrounds may have different speech patterns, but don't exaggerate them to the point of caricature
 
     3. ACKNOWLEDGE UNCERTAINTY
-       - If a survey value is missing (marked as "Unknown" or "Not available"), instruct the persona to be "open-minded" or "undecided" on that topic
+       - If a survey value is missing (marked as "Unknown" or "Not available"), instruct the persona to be "undecided" on that topic
        - Don't invent strong opinions for missing data
 
     4. KEEP IT GROUNDED
