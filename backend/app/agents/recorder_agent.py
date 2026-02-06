@@ -350,6 +350,77 @@ Be objective and comprehensive. This summary will be read by policymakers and th
             logger.error(f"Error generating executive summary: {e}")
             return f"The Citizens' Assembly deliberated on {self.topic} and reached a conclusion through democratic discussion and voting."
 
+    async def generate_group_summary(
+        self,
+        group_name: str,
+        round_summaries: list[dict]
+    ) -> dict:
+        """
+        Generate an overall summary for a deliberation group.
+
+        Args:
+            group_name: Name of the group (A, B, C, etc.)
+            round_summaries: List of dicts with round number and summary text
+
+        Returns:
+            Dict with consensus and disagreements summaries
+        """
+        if not round_summaries:
+            return {
+                "consensus": "No discussion recorded for this group.",
+                "disagreements": "No disagreements recorded."
+            }
+
+        # Format round summaries
+        summaries_text = "\n\n".join([
+            f"Round {rs.get('round', '?')}: {rs.get('summary', 'No summary')}"
+            for rs in round_summaries
+        ])
+
+        prompt = f"""Analyze Group {group_name}'s deliberation and generate two summaries:
+
+TOPIC: {self.topic}
+
+ROUND SUMMARIES:
+{summaries_text}
+
+Generate:
+1. CONSENSUS: What did this group generally agree on? What shared values or concerns emerged?
+2. DISAGREEMENTS: What were the main points of contention? What issues divided the group?
+
+Format your response as:
+CONSENSUS:
+[2-3 paragraphs about areas of agreement]
+
+DISAGREEMENTS:
+[2-3 paragraphs about areas of disagreement]"""
+
+        try:
+            response = await self.llm.complete(
+                prompt=prompt,
+                system_prompt=self.system_prompt,
+                max_tokens=600
+            )
+
+            # Parse response
+            result = {"consensus": "", "disagreements": ""}
+
+            if "CONSENSUS:" in response and "DISAGREEMENTS:" in response:
+                parts = response.split("DISAGREEMENTS:")
+                result["consensus"] = parts[0].replace("CONSENSUS:", "").strip()
+                result["disagreements"] = parts[1].strip() if len(parts) > 1 else ""
+            else:
+                result["consensus"] = response
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error generating group summary: {e}")
+            return {
+                "consensus": f"Group {group_name} discussed the topic.",
+                "disagreements": "Various perspectives were shared."
+            }
+
     async def generate_final_summary(
         self,
         full_transcript: str,

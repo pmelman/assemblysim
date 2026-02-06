@@ -3,23 +3,43 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { generateBriefing, startDeliberation, deleteAssembly } from '@/lib/api';
+import { generateCitizens, generateBriefing, startDeliberation, deleteAssembly } from '@/lib/api';
 import type { AssemblyStatus } from '@/lib/types';
-import { getValidActions } from '@/lib/utils';
-import { Play, BookOpen, Trash2, Loader2 } from 'lucide-react';
+import { isActiveStatus } from '@/lib/utils';
+import { Play, BookOpen, Trash2, Loader2, Users } from 'lucide-react';
 
 interface AssemblyActionsProps {
   assemblyId: number;
   status: AssemblyStatus;
+  hasCitizens: boolean;
+  hasBriefing: boolean;
   onActionComplete?: () => void;
 }
 
-export function AssemblyActions({ assemblyId, status, onActionComplete }: AssemblyActionsProps) {
+export function AssemblyActions({ assemblyId, status, hasCitizens, hasBriefing, onActionComplete }: AssemblyActionsProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const validActions = getValidActions(status);
+  // Determine valid actions based on status AND actual data
+  const isProcessing = isActiveStatus(status);
+  const canGenerateCitizens = !hasCitizens && !isProcessing;
+  const canGenerateBriefing = !isProcessing || status === 'generating_citizens';
+  const canStartDeliberation = hasCitizens && !isProcessing && status !== 'completed';
+  const canDelete = !isProcessing;
+
+  const handleGenerateCitizens = async () => {
+    setIsLoading('citizens');
+    setError(null);
+    try {
+      await generateCitizens(assemblyId);
+      onActionComplete?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate citizens');
+    } finally {
+      setIsLoading(null);
+    }
+  };
 
   const handleGenerateBriefing = async () => {
     setIsLoading('briefing');
@@ -62,7 +82,9 @@ export function AssemblyActions({ assemblyId, status, onActionComplete }: Assemb
     }
   };
 
-  if (validActions.length === 0 && !error) {
+  const hasAnyAction = canGenerateCitizens || canGenerateBriefing || canStartDeliberation || canDelete;
+
+  if (!hasAnyAction && !error) {
     return null;
   }
 
@@ -74,7 +96,22 @@ export function AssemblyActions({ assemblyId, status, onActionComplete }: Assemb
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        {validActions.includes('generate_briefing') && (
+        {canGenerateCitizens && (
+          <Button
+            onClick={handleGenerateCitizens}
+            disabled={isLoading !== null}
+            variant="default"
+          >
+            {isLoading === 'citizens' ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Users className="h-4 w-4 mr-2" />
+            )}
+            Generate Citizens
+          </Button>
+        )}
+
+        {canGenerateBriefing && (
           <Button
             onClick={handleGenerateBriefing}
             disabled={isLoading !== null}
@@ -85,11 +122,11 @@ export function AssemblyActions({ assemblyId, status, onActionComplete }: Assemb
             ) : (
               <BookOpen className="h-4 w-4 mr-2" />
             )}
-            Generate Briefing
+            {hasBriefing ? 'Regenerate Briefing' : 'Generate Briefing'}
           </Button>
         )}
 
-        {validActions.includes('start_deliberation') && (
+        {canStartDeliberation && (
           <Button
             onClick={handleStartDeliberation}
             disabled={isLoading !== null}
@@ -103,7 +140,7 @@ export function AssemblyActions({ assemblyId, status, onActionComplete }: Assemb
           </Button>
         )}
 
-        {validActions.includes('delete') && (
+        {canDelete && (
           <Button
             onClick={handleDelete}
             disabled={isLoading !== null}

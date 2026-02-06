@@ -76,6 +76,8 @@ export default function AssemblyDetailPage() {
       <AssemblyActions
         assemblyId={assembly.id}
         status={assembly.status}
+        hasCitizens={assembly.citizens.length > 0}
+        hasBriefing={assembly.briefing_book !== null}
         onActionComplete={mutate}
       />
 
@@ -142,7 +144,7 @@ export default function AssemblyDetailPage() {
         </TabsContent>
 
         <TabsContent value="briefing">
-          <BriefingViewer briefing={assembly.briefing_book} />
+          <BriefingViewer briefing={assembly.briefing_book} onDelete={mutate} />
         </TabsContent>
 
         <TabsContent value="report">

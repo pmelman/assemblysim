@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     DEFAULT_NUM_GROUPS: int = 5
     DEFAULT_NUM_ROUNDS: int = 3
 
+    # Phase 3 Features
+    ENABLE_GROUP_DELIBERATION: bool = True
+    ENABLE_FACT_CHECKING: bool = True
+    ENABLE_CITATIONS: bool = True
+    ENABLE_STUBBORNNESS: bool = True
+    ENABLE_PLENARY_PHASE: bool = True
+    PLENARY_REPRESENTATIVES_PER_GROUP: int = 1
+
     # Data Paths
     DATA_DIR: Path = Path(__file__).parent.parent.parent.parent / "data"
     GSS_DATA_PATH: Path = DATA_DIR / "GSS_stata" / "gss7224_r2.dta"

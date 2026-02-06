@@ -120,8 +120,18 @@ async def create_assembly_with_citizens(
                 )
                 db.add(citizen)
 
-            # Update assembly status
-            assembly.status = AssemblyStatus.CITIZENS_READY
+            # Update assembly status - READY if briefing exists, otherwise CITIZENS_READY
+            briefing_exists = db.query(BriefingBook).filter(
+                BriefingBook.assembly_id == assembly_id
+            ).first() is not None
+
+            if briefing_exists:
+                assembly.status = AssemblyStatus.READY
+                status_message = f"Generated {len(personas)} citizens in {num_groups} groups, assembly ready for deliberation"
+            else:
+                assembly.status = AssemblyStatus.CITIZENS_READY
+                status_message = f"Generated {len(personas)} citizens in {num_groups} groups"
+
             assembly.num_citizens = len(personas)
             assembly.num_groups = num_groups
             db.commit()
@@ -131,8 +141,8 @@ async def create_assembly_with_citizens(
             if broadcast_callback:
                 await broadcast_callback(assembly_id, {
                     "type": "status_update",
-                    "status": "citizens_ready",
-                    "message": f"Generated {len(personas)} citizens in {num_groups} groups",
+                    "status": assembly.status.value,
+                    "message": status_message,
                     "num_citizens": len(personas),
                     "num_groups": num_groups
                 })
@@ -225,8 +235,21 @@ async def generate_briefing_for_assembly(
                 )
                 db.add(briefing)
 
-            # Update assembly status
-            assembly.status = AssemblyStatus.READY
+            # Update assembly status - only READY if citizens exist
+            citizen_count = db.query(Citizen).filter(
+                Citizen.assembly_id == assembly_id
+            ).count()
+
+            if citizen_count > 0:
+                assembly.status = AssemblyStatus.READY
+                status_message = "Briefing book generated, assembly ready for deliberation"
+            else:
+                # Keep status as PENDING if no citizens yet
+                # (briefing can be generated independently)
+                if assembly.status == AssemblyStatus.GENERATING_BRIEFING:
+                    assembly.status = AssemblyStatus.PENDING
+                status_message = "Briefing book generated (citizens not yet generated)"
+
             db.commit()
 
             logger.info(f"Saved briefing book for assembly {assembly_id}")
@@ -234,8 +257,8 @@ async def generate_briefing_for_assembly(
             if broadcast_callback:
                 await broadcast_callback(assembly_id, {
                     "type": "status_update",
-                    "status": "ready",
-                    "message": "Briefing book generated, assembly ready for deliberation",
+                    "status": assembly.status.value,
+                    "message": status_message,
                     "is_fallback": briefing_data.get("is_fallback", False)
                 })
 

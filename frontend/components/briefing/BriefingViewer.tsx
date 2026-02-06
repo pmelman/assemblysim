@@ -1,21 +1,43 @@
 'use client';
 
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
 import { SourceList } from './SourceList';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDateTime } from '@/lib/utils';
+import { deleteBriefing } from '@/lib/api';
 import type { BriefingBookResponse } from '@/lib/types';
-import { BookOpen, Calendar } from 'lucide-react';
+import { BookOpen, Calendar, Trash2, Loader2 } from 'lucide-react';
 
 interface BriefingViewerProps {
   briefing: BriefingBookResponse | null;
   isLoading?: boolean;
+  onDelete?: () => void;
 }
 
-export function BriefingViewer({ briefing, isLoading }: BriefingViewerProps) {
+export function BriefingViewer({ briefing, isLoading, onDelete }: BriefingViewerProps) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (!briefing || !confirm('Are you sure you want to delete this briefing?')) {
+      return;
+    }
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await deleteBriefing(briefing.assembly_id);
+      onDelete?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete briefing');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -43,14 +65,34 @@ export function BriefingViewer({ briefing, isLoading }: BriefingViewerProps) {
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2 space-y-4">
+        {error && (
+          <div className="p-2 text-sm text-red-600 bg-red-50 rounded-md border border-red-200">
+            {error}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <BookOpen className="h-5 w-5" />
             Briefing Book
           </h2>
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-            <Calendar className="h-4 w-4" />
-            <span>Generated {formatDateTime(briefing.generated_at)}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Calendar className="h-4 w-4" />
+              <span>Generated {formatDateTime(briefing.generated_at)}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            >
+              {isDeleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+            </Button>
           </div>
         </div>
 

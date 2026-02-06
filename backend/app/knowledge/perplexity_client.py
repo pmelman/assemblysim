@@ -113,7 +113,7 @@ Format your response as the JSON structure specified in your instructions."""
         }
 
         payload = {
-            "model": "llama-3.1-sonar-large-128k-online",
+            "model": "sonar-pro",  # Updated to current Perplexity model
             "messages": [
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": prompt}
@@ -144,7 +144,13 @@ Format your response as the JSON structure specified in your instructions."""
             if citations:
                 logger.debug(f"CITATIONS: {len(citations)} sources")
                 for i, cite in enumerate(citations[:3], 1):  # Show first 3
-                    logger.debug(f"  {i}. {cite.get('title', 'Unknown')}: {cite.get('url', 'No URL')}")
+                    # Handle both string URLs and dict citations
+                    if isinstance(cite, str):
+                        logger.debug(f"  {i}. {cite}")
+                    elif isinstance(cite, dict):
+                        logger.debug(f"  {i}. {cite.get('title', 'Unknown')}: {cite.get('url', 'No URL')}")
+                    else:
+                        logger.debug(f"  {i}. {cite}")
             logger.debug("=" * 80)
 
             return result
@@ -154,6 +160,9 @@ Format your response as the JSON structure specified in your instructions."""
         try:
             content = response["choices"][0]["message"]["content"]
 
+            # Log raw content for debugging
+            logger.debug(f"Raw Perplexity content (first 500 chars): {content[:500]}")
+
             # Extract JSON from response
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
@@ -162,15 +171,30 @@ Format your response as the JSON structure specified in your instructions."""
 
             sections = json.loads(content.strip())
 
+            # Validate that sections is a dict
+            if not isinstance(sections, dict):
+                logger.warning(f"Parsed JSON is not a dict, got {type(sections).__name__}")
+                raise ValueError(f"Expected dict, got {type(sections).__name__}")
+
             # Extract citations if available
             sources = []
             if "citations" in response:
                 for citation in response["citations"]:
-                    sources.append({
-                        "title": citation.get("title", ""),
-                        "url": citation.get("url", ""),
-                        "snippet": citation.get("snippet", "")
-                    })
+                    # Handle both string URLs and dict citations
+                    if isinstance(citation, str):
+                        # Citation is just a URL string
+                        sources.append({
+                            "title": citation,
+                            "url": citation,
+                            "snippet": ""
+                        })
+                    elif isinstance(citation, dict):
+                        # Citation is a full dict with metadata
+                        sources.append({
+                            "title": citation.get("title", ""),
+                            "url": citation.get("url", ""),
+                            "snippet": citation.get("snippet", "")
+                        })
 
             # Build markdown content
             content_markdown = self._build_markdown(sections, topic)
@@ -181,10 +205,13 @@ Format your response as the JSON structure specified in your instructions."""
                 "sources": sources
             }
 
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning(f"Failed to parse Perplexity response: {e}")
+        except (json.JSONDecodeError, KeyError, ValueError, AttributeError, TypeError) as e:
+            logger.warning(f"Failed to parse Perplexity response: {type(e).__name__}: {e}")
             # Try to use raw content as markdown
-            content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+            try:
+                content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+            except (AttributeError, TypeError):
+                content = ""
             return {
                 "content_markdown": content or f"# {topic}\n\nBriefing content unavailable.",
                 "sections": None,
@@ -194,6 +221,11 @@ Format your response as the JSON structure specified in your instructions."""
     def _build_markdown(self, sections: dict, topic: str) -> str:
         """Build markdown content from structured sections."""
         md = f"# Briefing Book: {topic}\n\n"
+
+        # Safety check - ensure sections is a dict
+        if not isinstance(sections, dict):
+            logger.warning(f"_build_markdown received non-dict: {type(sections).__name__}")
+            return md + str(sections) if sections else md
 
         if overview := sections.get("overview"):
             md += f"## Overview\n\n{overview}\n\n"

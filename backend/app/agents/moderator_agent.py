@@ -225,6 +225,65 @@ Keep it to 1-2 sentences."""
             logger.error(f"Error generating followup: {e}")
             return "That's an interesting point. Would anyone like to respond or add to that?"
 
+    async def present_plenary_synthesis(
+        self,
+        group_summaries: list[dict],
+        topic: str
+    ) -> str:
+        """
+        Present a synthesis of all group discussions in the plenary phase.
+
+        Args:
+            group_summaries: List of dicts with group name and summary
+            topic: The assembly topic
+
+        Returns:
+            Plenary synthesis statement
+        """
+        # Format group summaries
+        summaries_text = ""
+        for gs in group_summaries:
+            group_name = gs.get("group", "Unknown")
+            summary = gs.get("summary", {})
+            consensus = summary.get("consensus", "No consensus recorded")
+            disagreements = summary.get("disagreements", "No disagreements recorded")
+
+            summaries_text += f"""
+GROUP {group_name}:
+Consensus: {consensus[:300]}...
+Key Disagreements: {disagreements[:200]}...
+"""
+
+        prompt = f"""Present a plenary synthesis to the full assembly.
+
+Topic: {topic}
+
+GROUP SUMMARIES:
+{summaries_text}
+
+Generate a synthesis (2-3 paragraphs) that:
+1. Welcomes everyone to the plenary session
+2. Highlights themes that emerged across multiple groups
+3. Notes interesting differences between groups
+4. Identifies potential areas of assembly-wide consensus
+5. Prepares participants to hear from group representatives
+
+Be neutral and inclusive of all perspectives."""
+
+        try:
+            response = await self.llm.complete(
+                prompt=prompt,
+                system_prompt=self.system_prompt,
+                max_tokens=500
+            )
+            return response
+
+        except Exception as e:
+            logger.error(f"Error generating plenary synthesis: {e}")
+            return f"""Welcome to the plenary session. We've heard thoughtful discussions from all groups on {topic}.
+
+Now we'll hear from representatives of each group before moving to the voting phase. Let's explore what emerged from our small group deliberations."""
+
     async def synthesize_discussion(
         self,
         discussion_transcript: str,

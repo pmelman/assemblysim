@@ -101,6 +101,16 @@ export async function deleteAssembly(id: number): Promise<void> {
 // CITIZEN ENDPOINTS
 // =============================================================================
 
+export async function generateCitizens(
+  assemblyId: number
+): Promise<{ message: string; assembly_id: number; num_citizens: number; num_groups: number }> {
+  const response = await fetch(
+    `${API_BASE_URL}/assemblies/${assemblyId}/citizens`,
+    { method: 'POST' }
+  );
+  return handleResponse<{ message: string; assembly_id: number; num_citizens: number; num_groups: number }>(response);
+}
+
 export async function listCitizens(
   assemblyId: number,
   groupId?: number
@@ -152,6 +162,14 @@ export async function getBriefing(
     `${API_BASE_URL}/assemblies/${assemblyId}/briefing`
   );
   return handleResponse<BriefingBookResponse>(response);
+}
+
+export async function deleteBriefing(assemblyId: number): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/assemblies/${assemblyId}/briefing`,
+    { method: 'DELETE' }
+  );
+  return handleResponse<void>(response);
 }
 
 // =============================================================================

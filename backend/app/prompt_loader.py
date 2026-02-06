@@ -124,6 +124,16 @@ def get_citizen_instructions() -> str:
     return get_prompt("citizen", "deliberation_instructions")
 
 
+def get_citizen_citation_instructions() -> str:
+    """Get the citizen citation instructions."""
+    return get_prompt("citizen", "citation_instructions")
+
+
+def get_fact_checker_prompt() -> str:
+    """Get the fact-checker system prompt."""
+    return get_prompt("fact_checker", "system")
+
+
 def get_perplexity_prompt() -> str:
     """Get the Perplexity research system prompt."""
     return get_prompt("perplexity", "system")

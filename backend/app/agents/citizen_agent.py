@@ -11,9 +11,11 @@ from typing import Optional
 
 from app.llm_client import get_llm_client
 from app.config import get_settings
-from app.prompt_loader import get_citizen_instructions
+from app.prompt_loader import get_citizen_instructions, get_citizen_citation_instructions
+from app.agents.stubbornness import calculate_stubbornness, get_stubbornness_instruction
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 class CitizenAgent:
@@ -70,9 +72,13 @@ class CitizenAgent:
 BRIEFING MATERIALS:
 The following research has been provided to inform your deliberation:
 
-{self._briefing_content[:3000]}  # Truncate if too long
+{self._briefing_content[:4000]}
 
 You may reference these materials in your responses."""
+
+            # Add citation instructions if enabled
+            if settings.ENABLE_CITATIONS:
+                prompt += get_citizen_citation_instructions()
 
         # Add deliberation instructions
         prompt += get_citizen_instructions()
@@ -87,7 +93,9 @@ You may reference these materials in your responses."""
     async def respond(
         self,
         discussion_context: str,
-        prompt: Optional[str] = None
+        prompt: Optional[str] = None,
+        round_number: int = 1,
+        total_rounds: int = 3
     ) -> str:
         """
         Generate a response in the deliberation.
@@ -95,6 +103,8 @@ You may reference these materials in your responses."""
         Args:
             discussion_context: Recent discussion messages for context
             prompt: Optional specific prompt (e.g., from moderator)
+            round_number: Current round number (1-indexed)
+            total_rounds: Total number of rounds in deliberation
 
         Returns:
             The citizen's response text
@@ -104,6 +114,19 @@ You may reference these materials in your responses."""
 {discussion_context}
 
 """
+        # Add stubbornness instruction if enabled
+        if settings.ENABLE_STUBBORNNESS:
+            stubbornness = calculate_stubbornness(
+                citizen_values=self.key_values,
+                political_leaning=None,
+                round_number=round_number,
+                total_rounds=total_rounds
+            )
+            stubbornness_instruction = get_stubbornness_instruction(
+                stubbornness, round_number
+            )
+            user_message += f"{stubbornness_instruction}\n\n"
+
         if prompt:
             user_message += f"""THE MODERATOR ASKS: {prompt}
 
@@ -122,6 +145,51 @@ Please share your thoughts."""
         except Exception as e:
             logger.error(f"Error generating citizen response: {e}")
             return f"[{self.name} is gathering their thoughts...]"
+
+    async def respond_to_plenary(
+        self,
+        group_summaries: list[dict],
+        own_group: str
+    ) -> str:
+        """
+        Respond during the plenary phase as a group representative.
+
+        Args:
+            group_summaries: List of dicts with group name and summary
+            own_group: Name of this citizen's group
+
+        Returns:
+            The citizen's plenary response
+        """
+        # Format group summaries
+        summaries_text = "\n\n".join([
+            f"GROUP {gs['group']}:\n{gs.get('summary', {}).get('consensus', 'No summary available')}"
+            for gs in group_summaries
+        ])
+
+        user_message = f"""You are representing Group {own_group} in the plenary session.
+
+SUMMARIES FROM ALL GROUPS:
+{summaries_text}
+
+As a representative of your group, share:
+1. The key insights or positions from your group's discussion
+2. How your group's perspective relates to or differs from other groups
+3. Any points of potential common ground you see across groups
+
+Keep your response focused (2-3 paragraphs)."""
+
+        try:
+            response = await self.llm.complete(
+                prompt=user_message,
+                system_prompt=self._full_system_prompt,
+                max_tokens=400
+            )
+            return response
+
+        except Exception as e:
+            logger.error(f"Error generating plenary response: {e}")
+            return f"[{self.name} shares their group's perspective...]"
 
     async def respond_to_question(
         self,

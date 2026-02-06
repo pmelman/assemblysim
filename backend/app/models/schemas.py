@@ -101,7 +101,7 @@ class MessageResponse(BaseModel):
     round_number: Optional[int] = None
     role: str
     content: str
-    citations: Optional[list[dict[str, str]]] = None
+    citations: Optional[list[dict[str, Any]]] = None  # Values can be str or None
     fact_check_status: Optional[str] = None
     created_at: datetime
 
@@ -113,7 +113,7 @@ class GroupResponse(BaseModel):
     """Response model for a deliberation group."""
     id: int
     name: str
-    round_summaries: Optional[list[str]] = None
+    round_summaries: Optional[list[dict[str, Any]]] = None  # List of {round: int, summary: str}
     consensus_summary: Optional[str] = None
     disagreements_summary: Optional[str] = None
     citizen_count: int = 0

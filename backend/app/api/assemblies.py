@@ -40,14 +40,12 @@ router = APIRouter(prefix="/assemblies", tags=["assemblies"])
 @router.post("", response_model=AssemblyResponse, status_code=201)
 async def create_assembly(
     request: AssemblyCreateRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    Create a new assembly and start generating citizens.
+    Create a new assembly (without generating citizens).
 
-    The assembly is created immediately, and citizen generation
-    runs in the background. Poll the assembly status to track progress.
+    Citizens must be generated separately using POST /assemblies/{id}/citizens.
     """
     logger.info(f"Creating assembly for topic: {request.topic[:50]}...")
 
@@ -64,16 +62,7 @@ async def create_assembly(
     db.commit()
     db.refresh(assembly)
 
-    logger.info(f"Created assembly {assembly.id}")
-
-    # Start background citizen generation
-    background_tasks.add_task(
-        create_assembly_with_citizens,
-        assembly.id,
-        request.num_citizens,
-        request.num_groups,
-        request.sampling_strategy
-    )
+    logger.info(f"Created assembly {assembly.id} (citizens not generated yet)")
 
     return assembly
 
@@ -248,6 +237,57 @@ def get_citizen(
     return citizen
 
 
+@router.post("/{assembly_id}/citizens", status_code=202)
+async def generate_citizens(
+    assembly_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate citizens for the assembly.
+
+    The assembly must be in PENDING status. Citizen generation
+    runs in the background - poll the assembly status to track progress.
+    """
+    assembly = db.query(Assembly).filter(Assembly.id == assembly_id).first()
+
+    if not assembly:
+        raise HTTPException(status_code=404, detail="Assembly not found")
+
+    if assembly.status != AssemblyStatus.PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Assembly not in PENDING status (current: {assembly.status.value})"
+        )
+
+    # Check if citizens already exist
+    existing_count = db.query(Citizen).filter(
+        Citizen.assembly_id == assembly_id
+    ).count()
+
+    if existing_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Citizens already exist ({existing_count} found)"
+        )
+
+    # Start background citizen generation
+    background_tasks.add_task(
+        create_assembly_with_citizens,
+        assembly.id,
+        assembly.num_citizens,
+        assembly.num_groups,
+        assembly.sampling_strategy
+    )
+
+    return {
+        "message": "Citizen generation started",
+        "assembly_id": assembly_id,
+        "num_citizens": assembly.num_citizens,
+        "num_groups": assembly.num_groups
+    }
+
+
 # =============================================================================
 # BRIEFING ENDPOINTS
 # =============================================================================
@@ -317,6 +357,34 @@ def get_briefing(
 
     if not briefing:
         raise HTTPException(status_code=404, detail="Briefing book not found")
+
+    return briefing
+
+
+@router.delete("/{assembly_id}/briefing", status_code=204)
+def delete_briefing(
+    assembly_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete the briefing book for an assembly.
+    """
+    briefing = db.query(BriefingBook).filter(
+        BriefingBook.assembly_id == assembly_id
+    ).first()
+
+    if not briefing:
+        raise HTTPException(status_code=404, detail="Briefing book not found")
+
+    # Update assembly status if it was READY (go back to CITIZENS_READY)
+    assembly = db.query(Assembly).filter(Assembly.id == assembly_id).first()
+    if assembly and assembly.status == AssemblyStatus.READY:
+        assembly.status = AssemblyStatus.CITIZENS_READY
+
+    db.delete(briefing)
+    db.commit()
+
+    logger.info(f"Deleted briefing for assembly {assembly_id}")
 
     return briefing
 

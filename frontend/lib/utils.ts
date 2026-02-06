@@ -164,15 +164,15 @@ export function isActiveStatus(status: string): boolean {
 export function getValidActions(status: string): string[] {
   switch (status) {
     case 'pending':
-      return ['delete'];
+      return ['generate_citizens', 'generate_briefing', 'delete'];
     case 'generating_citizens':
-      return [];
+      return ['generate_briefing'];
     case 'citizens_ready':
       return ['generate_briefing', 'start_deliberation', 'delete'];
     case 'generating_briefing':
       return [];
     case 'ready':
-      return ['start_deliberation', 'delete'];
+      return ['generate_briefing', 'start_deliberation', 'delete'];
     case 'deliberating':
       return [];
     case 'voting':
