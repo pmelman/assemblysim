@@ -12,6 +12,7 @@ Phase 3 Features:
 - Plenary synthesis phase
 """
 
+import json
 import logging
 import re
 from typing import Optional, Callable, Any
@@ -20,13 +21,38 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.models import (
-    Assembly, Citizen, DeliberationGroup, Message, Report, AssemblyStatus
+    Assembly, Citizen, DeliberationGroup, Message, Report, RoundResearch,
+    AssemblyStatus
 )
 from app.agents import CitizenAgent, ModeratorAgent, RecorderAgent, FactCheckerAgent
 from app.config import get_settings
+from app.knowledge.perplexity_client import get_perplexity_client
+from app.llm_client import get_llm_client
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Default round prompts used when none are configured on the assembly
+DEFAULT_ROUND_PROMPTS = [
+    {
+        "theme": "Initial Reactions",
+        "prompt": "Focus on first impressions and personal connections to the topic. "
+                  "Encourage citizens to share how this issue affects them personally "
+                  "and what their initial stance is."
+    },
+    {
+        "theme": "Trade-offs & Evidence",
+        "prompt": "Push citizens to engage with the briefing evidence and consider "
+                  "trade-offs. Challenge assumptions and encourage them to respond "
+                  "to points raised by others, especially those they disagree with."
+    },
+    {
+        "theme": "Synthesis & Recommendations",
+        "prompt": "Guide the discussion toward actionable recommendations. Ask citizens "
+                  "to identify areas of agreement, propose specific policy options, and "
+                  "articulate what an ideal outcome would look like."
+    },
+]
 
 
 class DeliberationEngine:
@@ -98,10 +124,16 @@ class DeliberationEngine:
                 # Group-based deliberation
                 for round_num in range(1, self.assembly.num_rounds + 1):
                     await self._run_group_deliberation_round(round_num)
+                    # Follow-up research between rounds (not after the last one)
+                    if round_num < self.assembly.num_rounds:
+                        await self._run_follow_up_research(round_num)
             else:
                 # Legacy: all citizens together
                 for round_num in range(1, self.assembly.num_rounds + 1):
                     await self._run_round(round_num)
+                    # Follow-up research between rounds (not after the last one)
+                    if round_num < self.assembly.num_rounds:
+                        await self._run_follow_up_research(round_num)
 
             # 4. Plenary synthesis (if enabled and groups exist)
             if settings.ENABLE_PLENARY_PHASE and len(self.groups) > 0:
@@ -187,6 +219,36 @@ class DeliberationEngine:
 
         logger.info(f"Initialized {len(self.citizen_agents)} citizen agents")
 
+    def _get_round_prompt(self, round_num: int) -> dict:
+        """
+        Get the theme and prompt for a given round number.
+
+        Checks the assembly's configured round_prompts first, then falls back
+        to DEFAULT_ROUND_PROMPTS, then to a generic fallback.
+
+        Args:
+            round_num: 1-indexed round number
+
+        Returns:
+            Dict with 'theme' and 'prompt' keys
+        """
+        idx = round_num - 1
+
+        # Check assembly-configured prompts
+        if self.assembly.round_prompts and idx < len(self.assembly.round_prompts):
+            return self.assembly.round_prompts[idx]
+
+        # Fall back to defaults
+        if idx < len(DEFAULT_ROUND_PROMPTS):
+            return DEFAULT_ROUND_PROMPTS[idx]
+
+        # Generic fallback for rounds beyond configured count
+        return {
+            "theme": f"Round {round_num} Discussion",
+            "prompt": "Continue the deliberation, building on previous rounds. "
+                      "Encourage deeper engagement and new perspectives."
+        }
+
     async def _run_opening(self):
         """Run the assembly opening."""
         citizen_names = [c.name for c in self.citizens]
@@ -239,11 +301,18 @@ class DeliberationEngine:
 
         logger.info(f"Running round {round_num} for Group {group.name} ({len(group_citizens)} citizens)")
 
+        # Get round prompt configuration
+        round_config = self._get_round_prompt(round_num)
+        round_theme = round_config.get("theme")
+        round_prompt_text = round_config.get("prompt")
+
         # Moderator opens round for this group
         citizen_names = [c.name for c in group_citizens]
         opening = await self.moderator.open_round(
             round_number=round_num,
-            citizen_names=citizen_names
+            citizen_names=citizen_names,
+            round_theme=round_theme,
+            round_prompt=round_prompt_text
         )
 
         await self._save_message(
@@ -351,11 +420,18 @@ class DeliberationEngine:
         """
         logger.info(f"Starting round {round_num}/{self.assembly.num_rounds}")
 
+        # Get round prompt configuration
+        round_config = self._get_round_prompt(round_num)
+        round_theme = round_config.get("theme")
+        round_prompt_text = round_config.get("prompt")
+
         # Moderator opens the round
         citizen_names = [c.name for c in self.citizens]
         opening = await self.moderator.open_round(
             round_number=round_num,
-            citizen_names=citizen_names
+            citizen_names=citizen_names,
+            round_theme=round_theme,
+            round_prompt=round_prompt_text
         )
 
         await self._save_message(
@@ -444,6 +520,167 @@ class DeliberationEngine:
                 "round": round_num,
                 "total_rounds": self.assembly.num_rounds
             })
+
+    async def _run_follow_up_research(self, round_num: int):
+        """
+        Run follow-up research between rounds using Perplexity.
+
+        Analyzes the round transcript to generate research queries,
+        calls Perplexity for each, and saves results.
+
+        Args:
+            round_num: The round that just completed
+        """
+        max_calls = self.assembly.max_research_calls_per_round
+        if max_calls <= 0:
+            logger.info(f"Follow-up research disabled (max_calls=0)")
+            return
+
+        max_tokens = self.assembly.max_research_tokens_per_call
+
+        logger.info(f"Running follow-up research after round {round_num}")
+
+        # Get the round transcript
+        transcript = self._get_round_transcript(round_num)
+        if not transcript:
+            logger.warning(f"No transcript for round {round_num}, skipping research")
+            return
+
+        # Generate research queries from transcript
+        queries = await self._generate_research_queries(transcript, round_num)
+        if not queries:
+            logger.info(f"No research queries generated for round {round_num}")
+            return
+
+        # Limit to max calls
+        queries = queries[:max_calls]
+        logger.info(f"Researching {len(queries)} queries for round {round_num}")
+
+        # Call Perplexity for each query
+        perplexity = get_perplexity_client()
+        results = []
+        for query in queries:
+            result = await perplexity.research_query(query, max_tokens=max_tokens)
+            results.append(result)
+
+        # Build summary markdown
+        summary_md = self._build_research_summary(results, round_num)
+
+        # Save RoundResearch record
+        research_record = RoundResearch(
+            assembly_id=self.assembly_id,
+            round_number=round_num,
+            queries=queries,
+            results=results,
+            summary_markdown=summary_md
+        )
+        self.db.add(research_record)
+        self.db.commit()
+
+        # Save as a system message so it appears in context for the next round
+        await self._save_message(
+            role="system",
+            content=summary_md,
+            phase="research",
+            round_number=round_num
+        )
+
+        logger.info(f"Follow-up research complete for round {round_num}")
+
+        # Broadcast research complete event
+        if self.broadcast:
+            await self.broadcast(self.assembly_id, {
+                "type": "research_complete",
+                "round": round_num,
+                "num_queries": len(queries)
+            })
+
+    async def _generate_research_queries(self, transcript: str, round_num: int) -> list[str]:
+        """
+        Use utility LLM to analyze the round transcript and generate
+        focused research queries targeting unresolved factual questions.
+
+        Args:
+            transcript: The round's discussion transcript
+            round_num: The round number
+
+        Returns:
+            List of research query strings
+        """
+        llm = get_llm_client(purpose="utility")
+
+        prompt = f"""Analyze this deliberation transcript from Round {round_num} and identify 1-3 specific,
+factual research questions that emerged from the discussion. Focus on:
+- Unresolved factual disputes or claims that need verification
+- Specific data or statistics that were referenced but not confirmed
+- Policy implementation details that citizens asked about
+- Comparisons to other jurisdictions or precedents mentioned
+
+Transcript:
+{transcript[:3000]}
+
+Return ONLY a JSON array of query strings. Example:
+["What is the current cost estimate for implementing UBI in the US?", "How did Finland's UBI pilot program perform?"]
+
+Return between 1 and 3 queries. If no factual questions need researching, return an empty array: []"""
+
+        try:
+            response = await llm.complete(
+                prompt=prompt,
+                system_prompt="You analyze deliberation transcripts and generate research queries. Return only valid JSON.",
+                max_tokens=300,
+                temperature=0.3
+            )
+
+            # Parse JSON from response
+            response = response.strip()
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0]
+
+            queries = json.loads(response.strip())
+            if isinstance(queries, list):
+                return [q for q in queries if isinstance(q, str) and q.strip()]
+            return []
+
+        except Exception as e:
+            logger.error(f"Failed to generate research queries: {e}")
+            return []
+
+    def _build_research_summary(self, results: list[dict], round_num: int) -> str:
+        """
+        Format research results into readable markdown for context injection.
+
+        Args:
+            results: List of research result dicts from Perplexity
+            round_num: The round number these results follow
+
+        Returns:
+            Formatted markdown string
+        """
+        lines = [f"## Follow-Up Research (After Round {round_num})\n"]
+
+        for i, result in enumerate(results, 1):
+            query = result.get("query", "Unknown query")
+            content = result.get("content", "No results available.")
+            sources = result.get("sources", [])
+
+            lines.append(f"### Q{i}: {query}\n")
+            lines.append(f"{content}\n")
+
+            if sources:
+                lines.append("**Sources:**")
+                for source in sources[:3]:
+                    title = source.get("title", source.get("url", ""))
+                    url = source.get("url", "")
+                    if url:
+                        lines.append(f"- [{title}]({url})")
+                    else:
+                        lines.append(f"- {title}")
+                lines.append("")
+
+        return "\n".join(lines)
 
     async def _run_plenary(self):
         """Run plenary synthesis after group deliberation."""

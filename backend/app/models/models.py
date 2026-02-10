@@ -49,6 +49,13 @@ class Assembly(Base):
     num_rounds = Column(Integer, default=3, nullable=False)
     sampling_strategy = Column(String(50), default="stratified")
 
+    # Per-round prompts: [{"theme": "...", "prompt": "..."}]
+    round_prompts = Column(JSON, nullable=True)
+
+    # Follow-up research configuration
+    max_research_calls_per_round = Column(Integer, default=2, nullable=False)
+    max_research_tokens_per_call = Column(Integer, default=2000, nullable=False)
+
     # Error tracking
     error_message = Column(Text, nullable=True)
 
@@ -63,6 +70,7 @@ class Assembly(Base):
     briefing_book = relationship("BriefingBook", back_populates="assembly", uselist=False, cascade="all, delete-orphan")
     messages = relationship("Message", back_populates="assembly", cascade="all, delete-orphan")
     report = relationship("Report", back_populates="assembly", uselist=False, cascade="all, delete-orphan")
+    round_research = relationship("RoundResearch", back_populates="assembly", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Assembly(id={self.id}, topic='{self.topic[:30]}...', status={self.status})>"
@@ -263,3 +271,50 @@ class Report(Base):
 
     def __repr__(self):
         return f"<Report(id={self.id}, assembly_id={self.assembly_id})>"
+
+
+class RoundResearch(Base):
+    """
+    Follow-up research results generated between deliberation rounds.
+
+    Stores Perplexity research queries and results triggered by
+    analysis of the round's discussion.
+    """
+    __tablename__ = "round_research"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assembly_id = Column(Integer, ForeignKey("assemblies.id"), nullable=False)
+    round_number = Column(Integer, nullable=False)
+    queries = Column(JSON, nullable=False)        # ["query1", "query2"]
+    results = Column(JSON, nullable=False)         # [{"query": "...", "content": "...", "sources": [...]}]
+    summary_markdown = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    assembly = relationship("Assembly", back_populates="round_research")
+
+    def __repr__(self):
+        return f"<RoundResearch(id={self.id}, assembly_id={self.assembly_id}, round={self.round_number})>"
+
+
+class AppSettings(Base):
+    """
+    Singleton table for persistent application defaults.
+
+    Only one row (id=1) should exist. Stores default values
+    for assembly creation parameters.
+    """
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    default_num_citizens = Column(Integer, default=40)
+    default_num_groups = Column(Integer, default=5)
+    default_num_rounds = Column(Integer, default=3)
+    default_sampling_strategy = Column(String(50), default="stratified")
+    default_round_prompts = Column(JSON, nullable=True)
+    default_max_research_calls_per_round = Column(Integer, default=2)
+    default_max_research_tokens_per_call = Column(Integer, default=2000)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<AppSettings(id={self.id})>"

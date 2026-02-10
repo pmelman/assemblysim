@@ -14,6 +14,9 @@ import type {
   MessageResponse,
   ReportResponse,
   GroupResponse,
+  RoundResearchResponse,
+  AppSettings,
+  AppSettingsUpdateRequest,
   ErrorResponse,
 } from './types';
 
@@ -239,6 +242,45 @@ export async function getReport(assemblyId: number): Promise<ReportResponse> {
     `${API_BASE_URL}/assemblies/${assemblyId}/report`
   );
   return handleResponse<ReportResponse>(response);
+}
+
+// =============================================================================
+// SETTINGS ENDPOINTS
+// =============================================================================
+
+export async function getAppSettings(): Promise<AppSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings`);
+  return handleResponse<AppSettings>(response);
+}
+
+export async function updateAppSettings(
+  request: AppSettingsUpdateRequest
+): Promise<AppSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<AppSettings>(response);
+}
+
+// =============================================================================
+// RESEARCH ENDPOINTS
+// =============================================================================
+
+export async function listResearch(
+  assemblyId: number,
+  roundNumber?: number
+): Promise<RoundResearchResponse[]> {
+  const params = new URLSearchParams();
+  if (roundNumber !== undefined) {
+    params.append('round_number', String(roundNumber));
+  }
+  const query = params.toString() ? `?${params}` : '';
+  const response = await fetch(
+    `${API_BASE_URL}/assemblies/${assemblyId}/research${query}`
+  );
+  return handleResponse<RoundResearchResponse[]>(response);
 }
 
 // =============================================================================

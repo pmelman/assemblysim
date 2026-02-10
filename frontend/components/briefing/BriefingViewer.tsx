@@ -116,47 +116,71 @@ export function BriefingViewer({ briefing, isLoading, onDelete }: BriefingViewer
               <CardTitle className="text-lg">Quick Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {briefing.sections.overview && (
-                <div>
-                  <h4 className="text-sm font-medium mb-1">Overview</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {briefing.sections.overview}
-                  </p>
-                </div>
-              )}
+              {Object.entries(briefing.sections).map(([key, value]) => {
+                if (value == null) return null;
+                const heading = key.replace(/_/g, ' ').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-              {briefing.sections.key_facts && briefing.sections.key_facts.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-1">Key Facts</h4>
-                  <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                    {briefing.sections.key_facts.map((fact, i) => (
-                      <li key={i}>{fact}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                // String values
+                if (typeof value === 'string') {
+                  return (
+                    <div key={key}>
+                      <h4 className="text-sm font-medium mb-1">{heading}</h4>
+                      <p className="text-sm text-muted-foreground line-clamp-4">
+                        {value}
+                      </p>
+                    </div>
+                  );
+                }
 
-              {briefing.sections.arguments_for && briefing.sections.arguments_for.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-1 text-green-600">Arguments For</h4>
-                  <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                    {briefing.sections.arguments_for.map((arg, i) => (
-                      <li key={i}>{arg}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                // Array of strings
+                if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
+                  return (
+                    <div key={key}>
+                      <h4 className="text-sm font-medium mb-1">{heading}</h4>
+                      <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                        {(value as string[]).slice(0, 5).map((item, i) => (
+                          <li key={i}>{item}</li>
+                        ))}
+                        {value.length > 5 && (
+                          <li className="text-xs italic">...and {value.length - 5} more</li>
+                        )}
+                      </ul>
+                    </div>
+                  );
+                }
 
-              {briefing.sections.arguments_against && briefing.sections.arguments_against.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-1 text-red-600">Arguments Against</h4>
-                  <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                    {briefing.sections.arguments_against.map((arg, i) => (
-                      <li key={i}>{arg}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                // Array of objects - show a count
+                if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+                  return (
+                    <div key={key}>
+                      <h4 className="text-sm font-medium mb-1">{heading}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {value.length} item{value.length !== 1 ? 's' : ''} &mdash; see full briefing
+                      </p>
+                    </div>
+                  );
+                }
+
+                // Object (dict) - show keys
+                if (typeof value === 'object' && !Array.isArray(value)) {
+                  const entries = Object.entries(value as Record<string, unknown>);
+                  return (
+                    <div key={key}>
+                      <h4 className="text-sm font-medium mb-1">{heading}</h4>
+                      <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                        {entries.slice(0, 5).map(([k, v]) => (
+                          <li key={k}>
+                            <span className="font-medium">{k.replace(/_/g, ' ')}:</span>{' '}
+                            {typeof v === 'string' ? (v as string).slice(0, 80) + ((v as string).length > 80 ? '...' : '') : String(v).slice(0, 80)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                }
+
+                return null;
+              })}
             </CardContent>
           </Card>
         )}

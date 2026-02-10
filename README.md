@@ -36,6 +36,9 @@ Full FastAPI backend with deliberation engine:
 - ✅ Multi-agent deliberation orchestration
 - ✅ Automated voting and report generation
 - ✅ Configurable prompts system (YAML)
+- ✅ Per-round deliberation prompts (custom themes/instructions)
+- ✅ Automatic follow-up research between rounds
+- ✅ Settings page for persistent assembly defaults
 
 **Next Phase:** Phase 3 - Advanced orchestration and frontend
 
@@ -232,6 +235,9 @@ assemblysim/
 | POST | `/assemblies/{id}/start` | Start deliberation |
 | GET | `/assemblies/{id}/messages` | Get deliberation transcript |
 | GET | `/assemblies/{id}/report` | Get final report |
+| GET | `/assemblies/{id}/research` | List follow-up research |
+| GET | `/settings` | Get persistent assembly defaults |
+| PUT | `/settings` | Update assembly defaults |
 | WS | `/ws/assemblies/{id}` | Real-time updates |
 
 See `backend/DELIBERATION_GUIDE.md` for detailed API usage.
@@ -264,6 +270,13 @@ WRITER_MAX_TOKENS=1000
 DEFAULT_NUM_CITIZENS=40
 DEFAULT_NUM_GROUPS=5
 DEFAULT_NUM_ROUNDS=3
+
+# Follow-up Research (Perplexity between rounds)
+DEFAULT_MAX_RESEARCH_CALLS_PER_ROUND=2
+DEFAULT_MAX_RESEARCH_TOKENS_PER_CALL=2000
+
+# Features
+ENABLE_FACT_CHECKING=False  # Currently disabled
 
 # Database
 DATABASE_URL=sqlite:///./assemblysim.db

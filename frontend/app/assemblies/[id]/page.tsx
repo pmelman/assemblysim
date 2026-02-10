@@ -14,7 +14,7 @@ import { BriefingViewer } from '@/components/briefing/BriefingViewer';
 import { ReportViewer } from '@/components/report/ReportViewer';
 import { useAssembly } from '@/hooks/useAssembly';
 import { useMessages } from '@/hooks/useMessages';
-import { Users, MessageSquare, BookOpen, FileText } from 'lucide-react';
+import { Users, MessageSquare, BookOpen, FileText, Search } from 'lucide-react';
 
 export default function AssemblyDetailPage() {
   const params = useParams();
@@ -98,6 +98,12 @@ export default function AssemblyDetailPage() {
             <BookOpen className="h-4 w-4" />
             Briefing
           </TabsTrigger>
+          {assembly.round_research && assembly.round_research.length > 0 && (
+            <TabsTrigger value="research" className="gap-2">
+              <Search className="h-4 w-4" />
+              Research ({assembly.round_research.length})
+            </TabsTrigger>
+          )}
           <TabsTrigger value="report" className="gap-2">
             <FileText className="h-4 w-4" />
             Report
@@ -139,6 +145,7 @@ export default function AssemblyDetailPage() {
               isLoading={messagesLoading}
               isLive={isLive}
               groupId={selectedGroupId}
+              roundPrompts={assembly.round_prompts}
             />
           </Card>
         </TabsContent>
@@ -146,6 +153,60 @@ export default function AssemblyDetailPage() {
         <TabsContent value="briefing">
           <BriefingViewer briefing={assembly.briefing_book} onDelete={mutate} />
         </TabsContent>
+
+        {assembly.round_research && assembly.round_research.length > 0 && (
+          <TabsContent value="research">
+            <div className="space-y-6">
+              {assembly.round_research.map((rr) => (
+                <Card key={rr.id} className="border-blue-200">
+                  <div className="p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Search className="h-5 w-5 text-blue-600" />
+                      <h3 className="text-lg font-semibold text-blue-800">
+                        Follow-Up Research After Round {rr.round_number}
+                      </h3>
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        {rr.queries.length} quer{rr.queries.length === 1 ? 'y' : 'ies'}
+                      </span>
+                    </div>
+                    {rr.results.map((result, idx) => (
+                      <div key={idx} className="mb-4 last:mb-0">
+                        <h4 className="text-sm font-medium text-blue-700 mb-1">
+                          Q{idx + 1}: {result.query}
+                        </h4>
+                        <div className="text-sm text-muted-foreground whitespace-pre-wrap mb-2">
+                          {result.content}
+                        </div>
+                        {result.sources && result.sources.length > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            <span className="font-medium">Sources: </span>
+                            {result.sources.slice(0, 3).map((s, si) => (
+                              <span key={si}>
+                                {si > 0 && ', '}
+                                {s.url ? (
+                                  <a
+                                    href={s.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline"
+                                  >
+                                    {s.title || s.url}
+                                  </a>
+                                ) : (
+                                  s.title
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+        )}
 
         <TabsContent value="report">
           <ReportViewer report={assembly.report} />

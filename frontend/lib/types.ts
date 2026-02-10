@@ -28,12 +28,20 @@ export type FactCheckStatus = 'verified' | 'disputed' | 'unchecked';
 // REQUEST TYPES
 // =============================================================================
 
+export interface RoundPromptConfig {
+  theme: string;
+  prompt: string;
+}
+
 export interface AssemblyCreateRequest {
   topic: string;
   num_citizens?: number;
   num_groups?: number;
   num_rounds?: number;
   sampling_strategy?: 'stratified' | 'quota' | 'random';
+  round_prompts?: RoundPromptConfig[] | null;
+  max_research_calls_per_round?: number;
+  max_research_tokens_per_call?: number;
 }
 
 export interface BriefingGenerateRequest {
@@ -71,13 +79,8 @@ export interface BriefingBookResponse {
   generated_at: string;
 }
 
-export interface BriefingSections {
-  overview?: string;
-  arguments_for?: string[];
-  arguments_against?: string[];
-  policy_options?: string[];
-  key_facts?: string[];
-}
+// Briefing sections can have any structure depending on the Perplexity prompt config
+export type BriefingSections = Record<string, unknown>;
 
 export interface BriefingSource {
   title: string;
@@ -140,6 +143,16 @@ export interface VoteTally {
   total: number;
 }
 
+export interface RoundResearchResponse {
+  id: number;
+  assembly_id: number;
+  round_number: number;
+  queries: string[];
+  results: Array<{ query: string; content: string; sources: Array<{ title: string; url: string }> }>;
+  summary_markdown: string;
+  created_at: string;
+}
+
 export interface AssemblyResponse {
   id: number;
   topic: string;
@@ -148,6 +161,9 @@ export interface AssemblyResponse {
   num_groups: number;
   num_rounds: number;
   sampling_strategy: string;
+  round_prompts: RoundPromptConfig[] | null;
+  max_research_calls_per_round: number;
+  max_research_tokens_per_call: number;
   error_message: string | null;
   created_at: string;
   updated_at: string;
@@ -159,6 +175,7 @@ export interface AssemblyDetailResponse extends AssemblyResponse {
   groups: GroupResponse[];
   briefing_book: BriefingBookResponse | null;
   report: ReportResponse | null;
+  round_research: RoundResearchResponse[];
 }
 
 export interface AssemblyListResponse {
@@ -172,6 +189,14 @@ export interface AssemblyListResponse {
 // WEBSOCKET TYPES
 // =============================================================================
 
+export interface WSMessage {
+  type: WSMessageType;
+  assembly_id: number;
+  data?: Record<string, unknown>;
+  message?: string;
+  timestamp: string;
+}
+
 export type WSMessageType =
   | 'connected'
   | 'status_update'
@@ -180,14 +205,29 @@ export type WSMessageType =
   | 'error'
   | 'pong'
   | 'subscribed'
-  | 'status';
+  | 'status'
+  | 'research_complete';
 
-export interface WSMessage {
-  type: WSMessageType;
-  assembly_id: number;
-  data?: Record<string, unknown>;
-  message?: string;
-  timestamp: string;
+export interface AppSettings {
+  id: number;
+  default_num_citizens: number;
+  default_num_groups: number;
+  default_num_rounds: number;
+  default_sampling_strategy: string;
+  default_round_prompts: RoundPromptConfig[] | null;
+  default_max_research_calls_per_round: number;
+  default_max_research_tokens_per_call: number;
+  updated_at: string | null;
+}
+
+export interface AppSettingsUpdateRequest {
+  default_num_citizens?: number;
+  default_num_groups?: number;
+  default_num_rounds?: number;
+  default_sampling_strategy?: string;
+  default_round_prompts?: RoundPromptConfig[] | null;
+  default_max_research_calls_per_round?: number;
+  default_max_research_tokens_per_call?: number;
 }
 
 export interface WSStatusUpdate {

@@ -14,13 +14,13 @@ from sqlalchemy.orm import Session
 from app.models.database import get_db
 from app.models.models import (
     Assembly, Citizen, DeliberationGroup, Message, BriefingBook, Report,
-    AssemblyStatus
+    RoundResearch, AssemblyStatus
 )
 from app.models.schemas import (
     AssemblyCreateRequest, AssemblyResponse, AssemblyDetailResponse,
     AssemblyListResponse, CitizenResponse, CitizenDetailResponse,
     BriefingBookResponse, BriefingGenerateRequest, MessageResponse,
-    ReportResponse, GroupResponse
+    ReportResponse, GroupResponse, RoundResearchResponse
 )
 from app.api.services import (
     create_assembly_with_citizens,
@@ -50,12 +50,19 @@ async def create_assembly(
     logger.info(f"Creating assembly for topic: {request.topic[:50]}...")
 
     # Create assembly record
+    round_prompts_data = None
+    if request.round_prompts:
+        round_prompts_data = [rp.model_dump() for rp in request.round_prompts]
+
     assembly = Assembly(
         topic=request.topic,
         num_citizens=request.num_citizens,
         num_groups=request.num_groups,
         num_rounds=request.num_rounds,
         sampling_strategy=request.sampling_strategy,
+        round_prompts=round_prompts_data,
+        max_research_calls_per_round=request.max_research_calls_per_round,
+        max_research_tokens_per_call=request.max_research_tokens_per_call,
         status=AssemblyStatus.PENDING
     )
     db.add(assembly)
@@ -112,6 +119,11 @@ def get_assembly(
     if not assembly:
         raise HTTPException(status_code=404, detail="Assembly not found")
 
+    # Load round research
+    round_research_records = db.query(RoundResearch).filter(
+        RoundResearch.assembly_id == assembly_id
+    ).order_by(RoundResearch.round_number).all()
+
     # Build response with nested data
     response = AssemblyDetailResponse(
         id=assembly.id,
@@ -121,6 +133,9 @@ def get_assembly(
         num_groups=assembly.num_groups,
         num_rounds=assembly.num_rounds,
         sampling_strategy=assembly.sampling_strategy,
+        round_prompts=assembly.round_prompts,
+        max_research_calls_per_round=assembly.max_research_calls_per_round,
+        max_research_tokens_per_call=assembly.max_research_tokens_per_call,
         error_message=assembly.error_message,
         created_at=assembly.created_at,
         updated_at=assembly.updated_at,
@@ -163,7 +178,16 @@ def get_assembly(
             minority_report=assembly.report.minority_report,
             key_themes=assembly.report.key_themes,
             generated_at=assembly.report.generated_at
-        ) if assembly.report else None
+        ) if assembly.report else None,
+        round_research=[RoundResearchResponse(
+            id=rr.id,
+            assembly_id=rr.assembly_id,
+            round_number=rr.round_number,
+            queries=rr.queries,
+            results=rr.results,
+            summary_markdown=rr.summary_markdown,
+            created_at=rr.created_at
+        ) for rr in round_research_records]
     )
 
     return response
@@ -554,3 +578,29 @@ def get_report(
         raise HTTPException(status_code=404, detail="Report not found")
 
     return report
+
+
+# =============================================================================
+# RESEARCH ENDPOINTS
+# =============================================================================
+
+@router.get("/{assembly_id}/research", response_model=list[RoundResearchResponse])
+def list_research(
+    assembly_id: int,
+    round_number: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    List follow-up research results for an assembly, optionally filtered by round.
+    """
+    # Verify assembly exists
+    assembly = db.query(Assembly).filter(Assembly.id == assembly_id).first()
+    if not assembly:
+        raise HTTPException(status_code=404, detail="Assembly not found")
+
+    query = db.query(RoundResearch).filter(RoundResearch.assembly_id == assembly_id)
+
+    if round_number is not None:
+        query = query.filter(RoundResearch.round_number == round_number)
+
+    return query.order_by(RoundResearch.round_number).all()

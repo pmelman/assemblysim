@@ -48,9 +48,13 @@ class Settings(BaseSettings):
     DEFAULT_NUM_GROUPS: int = 5
     DEFAULT_NUM_ROUNDS: int = 3
 
+    # Follow-up Research Defaults
+    DEFAULT_MAX_RESEARCH_CALLS_PER_ROUND: int = 2
+    DEFAULT_MAX_RESEARCH_TOKENS_PER_CALL: int = 2000
+
     # Phase 3 Features
     ENABLE_GROUP_DELIBERATION: bool = True
-    ENABLE_FACT_CHECKING: bool = True
+    ENABLE_FACT_CHECKING: bool = False
     ENABLE_CITATIONS: bool = True
     ENABLE_STUBBORNNESS: bool = True
     ENABLE_PLENARY_PHASE: bool = True

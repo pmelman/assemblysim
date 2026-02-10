@@ -79,7 +79,9 @@ Let's begin. Who would like to share their initial thoughts?"""
         self,
         round_number: int,
         citizen_names: list[str],
-        previous_summary: Optional[str] = None
+        previous_summary: Optional[str] = None,
+        round_theme: Optional[str] = None,
+        round_prompt: Optional[str] = None
     ) -> str:
         """
         Generate the opening for a new deliberation round.
@@ -88,6 +90,8 @@ Let's begin. Who would like to share their initial thoughts?"""
             round_number: Current round number (1-indexed)
             citizen_names: Names of citizens in this group
             previous_summary: Summary of previous round if applicable
+            round_theme: Optional theme for this round (e.g. "Initial Reactions")
+            round_prompt: Optional custom moderator instructions for this round
 
         Returns:
             Round opening statement
@@ -97,6 +101,17 @@ Let's begin. Who would like to share their initial thoughts?"""
 "{self.topic}"
 
 Citizens in this group: {', '.join(citizen_names)}
+"""
+
+        if round_theme:
+            prompt += f"\nRound Theme: {round_theme}\n"
+
+        if round_prompt:
+            prompt += f"""
+ROUND FOCUS INSTRUCTIONS:
+{round_prompt}
+
+Use these instructions to frame your opening remarks and guide the discussion focus.
 """
 
         if previous_summary:
@@ -121,7 +136,8 @@ Acknowledge the progress made and introduce the focus for this round.
 
         except Exception as e:
             logger.error(f"Error generating round opening: {e}")
-            return f"Let's begin Round {round_number} of our deliberation. Who would like to start?"
+            theme_label = f" - {round_theme}" if round_theme else ""
+            return f"Let's begin Round {round_number}{theme_label} of our deliberation. Who would like to start?"
 
     async def prompt_citizen(
         self,

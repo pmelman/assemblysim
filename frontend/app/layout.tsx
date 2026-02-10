@@ -54,6 +54,12 @@ export default function RootLayout({
                   >
                     New Assembly
                   </a>
+                  <a
+                    href="/settings"
+                    className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Settings
+                  </a>
                 </nav>
               </div>
             </div>

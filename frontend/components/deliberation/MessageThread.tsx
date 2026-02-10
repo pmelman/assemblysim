@@ -7,7 +7,8 @@ import { RoundDivider } from './RoundDivider';
 import { LiveIndicator } from './LiveIndicator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import type { MessageResponse } from '@/lib/types';
+import type { MessageResponse, RoundPromptConfig } from '@/lib/types';
+import { Search } from 'lucide-react';
 
 interface MessageThreadProps {
   messages: MessageResponse[];
@@ -16,6 +17,7 @@ interface MessageThreadProps {
   groupId?: number | null;
   autoScroll?: boolean;
   className?: string;
+  roundPrompts?: RoundPromptConfig[] | null;
 }
 
 export function MessageThread({
@@ -25,6 +27,7 @@ export function MessageThread({
   groupId,
   autoScroll = true,
   className,
+  roundPrompts,
 }: MessageThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [userHasScrolled, setUserHasScrolled] = useState(false);
@@ -34,8 +37,16 @@ export function MessageThread({
     ? messages.filter((m) => m.group_id === groupId || m.group_id === null)
     : messages;
 
+  // Get theme for a round number from roundPrompts
+  const getTheme = (round: number): string | undefined => {
+    if (!roundPrompts || round <= 0) return undefined;
+    const idx = round - 1;
+    if (idx < roundPrompts.length) return roundPrompts[idx].theme;
+    return undefined;
+  };
+
   // Group messages by round for dividers
-  const messagesWithDividers: (MessageResponse | { type: 'divider'; round: number; phase: string })[] = [];
+  const messagesWithDividers: (MessageResponse | { type: 'divider'; round: number; phase: string; theme?: string })[] = [];
   let lastRound: number | null = null;
   let lastPhase: string | null = null;
 
@@ -49,6 +60,7 @@ export function MessageThread({
         type: 'divider',
         round: currentRound,
         phase: currentPhase,
+        theme: getTheme(currentRound),
       });
       lastRound = currentRound;
       lastPhase = currentPhase;
@@ -116,10 +128,42 @@ export function MessageThread({
                   key={`divider-${item.round}-${item.phase}`}
                   round={item.round}
                   phase={item.phase}
+                  theme={item.theme}
                 />
               );
             }
             const message = item as MessageResponse;
+
+            // Render research messages with distinct visual treatment
+            if (message.role === 'system' && message.phase === 'research') {
+              return (
+                <div
+                  key={message.id}
+                  className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 p-4"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Search className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700 dark:text-blue-400">
+                      Follow-up Research
+                    </span>
+                  </div>
+                  <div className="text-sm text-blue-900 dark:text-blue-100 prose prose-sm max-w-none prose-blue">
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: message.content
+                          .replace(/^## (.+)$/gm, '<h4 class="text-blue-800 dark:text-blue-300 font-semibold mt-3 mb-1">$1</h4>')
+                          .replace(/^### (.+)$/gm, '<h5 class="text-blue-700 dark:text-blue-400 font-medium mt-2 mb-1">$1</h5>')
+                          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                          .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" class="text-blue-600 underline" target="_blank" rel="noopener noreferrer">$1</a>')
+                          .replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>')
+                          .replace(/\n/g, '<br/>')
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            }
+
             return <MessageBubble key={message.id} message={message} />;
           })}
 

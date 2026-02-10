@@ -15,6 +15,12 @@ from pydantic import BaseModel, Field
 # REQUEST SCHEMAS
 # =============================================================================
 
+class RoundPromptConfig(BaseModel):
+    """Configuration for a single deliberation round's prompt."""
+    theme: str = Field(..., description="Theme for the round, e.g. 'Initial Reactions'")
+    prompt: str = Field(..., description="Custom moderator instructions for the round")
+
+
 class AssemblyCreateRequest(BaseModel):
     """Request body for creating a new assembly."""
     topic: str = Field(..., min_length=5, max_length=500, description="The policy topic for deliberation")
@@ -22,6 +28,9 @@ class AssemblyCreateRequest(BaseModel):
     num_groups: int = Field(default=5, ge=1, le=10, description="Number of deliberation groups")
     num_rounds: int = Field(default=3, ge=1, le=10, description="Number of deliberation rounds")
     sampling_strategy: str = Field(default="stratified", description="Sampling strategy: stratified, quota, or random")
+    round_prompts: Optional[list[RoundPromptConfig]] = Field(default=None, description="Per-round themes and prompts")
+    max_research_calls_per_round: int = Field(default=2, ge=0, le=10, description="Max Perplexity research calls between rounds")
+    max_research_tokens_per_call: int = Field(default=2000, ge=500, le=8000, description="Max tokens per research call")
 
     class Config:
         json_schema_extra = {
@@ -30,7 +39,14 @@ class AssemblyCreateRequest(BaseModel):
                 "num_citizens": 40,
                 "num_groups": 5,
                 "num_rounds": 3,
-                "sampling_strategy": "stratified"
+                "sampling_strategy": "stratified",
+                "round_prompts": [
+                    {"theme": "Initial Reactions", "prompt": "Focus on first impressions and personal connections..."},
+                    {"theme": "Trade-offs & Evidence", "prompt": "Push citizens to engage with evidence..."},
+                    {"theme": "Synthesis & Recommendations", "prompt": "Guide toward actionable recommendations..."}
+                ],
+                "max_research_calls_per_round": 2,
+                "max_research_tokens_per_call": 2000
             }
         }
 
@@ -138,6 +154,20 @@ class ReportResponse(BaseModel):
         from_attributes = True
 
 
+class RoundResearchResponse(BaseModel):
+    """Response model for follow-up research results."""
+    id: int
+    assembly_id: int
+    round_number: int
+    queries: list[str]
+    results: list[dict[str, Any]]
+    summary_markdown: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class AssemblyResponse(BaseModel):
     """Basic response model for an assembly."""
     id: int
@@ -147,6 +177,9 @@ class AssemblyResponse(BaseModel):
     num_groups: int
     num_rounds: int
     sampling_strategy: str
+    round_prompts: Optional[list[dict[str, str]]] = None
+    max_research_calls_per_round: int = 2
+    max_research_tokens_per_call: int = 2000
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -162,6 +195,7 @@ class AssemblyDetailResponse(AssemblyResponse):
     groups: list[GroupResponse] = []
     briefing_book: Optional[BriefingBookResponse] = None
     report: Optional[ReportResponse] = None
+    round_research: list[RoundResearchResponse] = []
 
     class Config:
         from_attributes = True
@@ -221,3 +255,34 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     status_code: int = 500
+
+
+# =============================================================================
+# SETTINGS SCHEMAS
+# =============================================================================
+
+class AppSettingsResponse(BaseModel):
+    """Response model for application settings."""
+    id: int = 1
+    default_num_citizens: int = 40
+    default_num_groups: int = 5
+    default_num_rounds: int = 3
+    default_sampling_strategy: str = "stratified"
+    default_round_prompts: Optional[list[dict[str, str]]] = None
+    default_max_research_calls_per_round: int = 2
+    default_max_research_tokens_per_call: int = 2000
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AppSettingsUpdateRequest(BaseModel):
+    """Request body for updating application settings. All fields optional."""
+    default_num_citizens: Optional[int] = Field(default=None, ge=8, le=100)
+    default_num_groups: Optional[int] = Field(default=None, ge=1, le=10)
+    default_num_rounds: Optional[int] = Field(default=None, ge=1, le=10)
+    default_sampling_strategy: Optional[str] = None
+    default_round_prompts: Optional[list[RoundPromptConfig]] = None
+    default_max_research_calls_per_round: Optional[int] = Field(default=None, ge=0, le=10)
+    default_max_research_tokens_per_call: Optional[int] = Field(default=None, ge=500, le=8000)

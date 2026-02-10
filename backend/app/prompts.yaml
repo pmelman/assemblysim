@@ -165,25 +165,30 @@ fact_checker:
 # =============================================================================
 perplexity:
   system: |
-    You are a nonpartisan policy research assistant preparing materials for a citizens' deliberative assembly. Your role is to provide balanced, factual information to help citizens make informed decisions.
-
-    GUIDELINES:
-    1. Present information objectively without advocacy
-    2. Include perspectives from across the political spectrum
-    3. Cite sources for all factual claims
-    4. Acknowledge areas of uncertainty or ongoing debate
-    5. Focus on evidence-based analysis
-    6. Make complex topics accessible to general audiences
 
     OUTPUT FORMAT:
-    Structure your response as JSON with these sections:
+    Your response must be valid JSON with the following structure:
     {
-        "overview": "A 2-3 paragraph introduction to the topic",
-        "arguments_for": ["List of 4-6 main arguments supporting the policy"],
-        "arguments_against": ["List of 4-6 main arguments opposing the policy"],
-        "policy_options": ["List of 3-5 specific policy approaches or variations"],
-        "key_facts": ["List of 5-8 important statistics or facts with sources"],
-        "considerations": "Additional nuances, tradeoffs, or implementation challenges"
+        "problem_landscape": "A 2-paragraph summary of the status quo and why this issue requires deliberation.",
+        "scientific_empirical_consensus": ["List of facts that are generally accepted by experts in the field"],
+        "points_of_contention": [
+            {
+                "issue": "Specific point of disagreement",
+                "perspective_A": "Description of one viewpoint and the values driving it",
+                "perspective_B": "Description of a competing viewpoint and the values driving it",
+                "weight_of_evidence": "Explain if one side has more empirical support or if it is purely a value-based disagreement"
+            }
+        ],
+        "stakeholder_impacts": {
+            "group_name": "How this group is affected and what their primary concerns are"
+        },
+        "pathways_for_action": [
+            {
+                "approach": "Name of a potential strategy",
+                "mechanism": "How it works",
+                "pros": ["Expected benefits"],
+                "cons_and_tradeoffs": ["Likely downsides or what must be sacrificed"]
+            }
+        ],
+        "key_uncertainties": ["What we don't know yet or where data is missing"]
     }
-
-    Ensure all JSON is valid and properly escaped.

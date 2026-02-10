@@ -25,8 +25,10 @@ This document helps AI assistants (like you!) understand and work on this codeba
 2. **SQLite Database**: SQLAlchemy models for assemblies, citizens, messages, reports
 3. **Deliberation Engine**: Multi-agent orchestration without LangGraph
 4. **Agent System**: Citizen, Moderator, and Recorder agents
-5. **Perplexity Integration**: Research briefing books
+5. **Perplexity Integration**: Research briefing books + follow-up research between rounds
 6. **Prompt Configuration**: YAML-based prompt management
+7. **Per-Round Prompts**: Custom themes and moderator instructions for each round
+8. **Settings Management**: Persistent defaults for assembly configuration
 
 ### What's Next (Phase 3+)
 
@@ -101,6 +103,8 @@ assemblysim/                           # Project root (working directory)
 - Uses pydantic-settings with `.env` file at `assemblysim/.env`
 - Model selection: WRITER_MODEL, CITIZEN_MODEL, MODERATOR_MODEL, UTILITY_MODEL
 - Database URL, API keys, LLM parameters
+- Research defaults: DEFAULT_MAX_RESEARCH_CALLS_PER_ROUND, DEFAULT_MAX_RESEARCH_TOKENS_PER_CALL
+- ENABLE_FACT_CHECKING=False (currently disabled)
 
 #### `gss_loader.py` - Data Loading
 - `GSSLoader.load(years=None)` returns pandas DataFrame
@@ -133,26 +137,34 @@ assemblysim/                           # Project root (working directory)
 - `init_db()` creates all tables
 
 #### `models/models.py` - Database Models
-- **Assembly**: topic, status, num_citizens, timestamps
+- **Assembly**: topic, status, num_citizens, round_prompts, research config
 - **Citizen**: name, system_prompt, gss_data, final_vote
 - **DeliberationGroup**: group assignments, summaries
 - **Message**: deliberation transcript (role, content, phase, round)
 - **BriefingBook**: Perplexity research content
+- **RoundResearch**: follow-up research queries, results, sources (new)
+- **AppSettings**: persistent defaults singleton (new)
 - **Report**: executive summary, vote tally, themes
 - **AssemblyStatus** enum: PENDING → GENERATING_CITIZENS → CITIZENS_READY → READY → DELIBERATING → VOTING → COMPLETED
 
 #### `models/schemas.py` - Pydantic Schemas
-- Request schemas: AssemblyCreateRequest, BriefingGenerateRequest
-- Response schemas: AssemblyResponse, CitizenResponse, ReportResponse, etc.
-- WSMessage for WebSocket communication
+- Request schemas: AssemblyCreateRequest (with round_prompts, research config), BriefingGenerateRequest, AppSettingsUpdateRequest
+- Response schemas: AssemblyResponse, CitizenResponse, ReportResponse, RoundResearchResponse, AppSettingsResponse
+- RoundPromptConfig for per-round themes/prompts
+- WSMessage for WebSocket communication (includes research_complete type)
 
 #### `api/assemblies.py` - REST Endpoints
 - POST /assemblies - Create assembly, start citizen generation
-- GET /assemblies/{id} - Get assembly details
+- GET /assemblies/{id} - Get assembly details (includes round_research)
 - POST /assemblies/{id}/briefing - Generate briefing book
 - POST /assemblies/{id}/start - Start deliberation
 - GET /assemblies/{id}/messages - Get transcript
 - GET /assemblies/{id}/report - Get final report
+- GET /assemblies/{id}/research - List follow-up research
+
+#### `api/settings.py` - Settings Endpoints (new)
+- GET /settings - Get persistent assembly defaults
+- PUT /settings - Update defaults (partial updates supported)
 
 #### `api/websocket.py` - Real-time Updates
 - `ConnectionManager` class manages WebSocket connections
@@ -166,8 +178,9 @@ assemblysim/                           # Project root (working directory)
 
 #### `orchestration/deliberation_engine.py` - Main Workflow
 - `DeliberationEngine` class orchestrates complete assembly
-- Flow: Opening → Rounds → Voting → Report
-- Each round: Moderator opens → Citizens respond → Recorder summarizes
+- Flow: Opening → Rounds (with research between) → Voting → Report
+- Each round: Moderator opens (with custom theme/prompt) → Citizens respond → Recorder summarizes
+- Between rounds: Generates research queries from transcript, calls Perplexity, injects results
 - Saves all messages to database
 - Broadcasts updates via WebSocket
 
@@ -192,7 +205,9 @@ assemblysim/                           # Project root (working directory)
 
 #### `knowledge/perplexity_client.py` - Research
 - `PerplexityClient().generate_briefing_book(topic, depth)`
-- Returns structured briefing with overview, arguments for/against, policy options
+- `research_query(query, max_tokens)` - focused follow-up research between rounds
+- Generalized markdown builder handles any JSON structure from Perplexity
+- Returns structured briefing with sources and citations
 - Fallback mode when API unavailable
 - Uses `get_perplexity_prompt()` from prompt_loader
 

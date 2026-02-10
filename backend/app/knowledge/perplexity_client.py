@@ -99,8 +99,14 @@ Format your response as the JSON structure specified in your instructions."""
             logger.error(f"Perplexity API error: {e}")
             return self._generate_fallback_briefing(topic)
 
-    async def _call_api(self, prompt: str) -> dict:
-        """Make the API call to Perplexity."""
+    async def _call_api(self, prompt: str, max_tokens: int = 4000, system_prompt: Optional[str] = None) -> dict:
+        """Make the API call to Perplexity.
+
+        Args:
+            prompt: The user prompt to send
+            max_tokens: Maximum tokens in response (default 4000)
+            system_prompt: Optional override for system prompt
+        """
         logger.debug("=" * 80)
         logger.debug("PERPLEXITY REQUEST")
         logger.debug("-" * 80)
@@ -115,11 +121,11 @@ Format your response as the JSON structure specified in your instructions."""
         payload = {
             "model": "sonar-pro",  # Updated to current Perplexity model
             "messages": [
-                {"role": "system", "content": self.system_prompt},
+                {"role": "system", "content": system_prompt or self.system_prompt},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.3,
-            "max_tokens": 4000,
+            "max_tokens": max_tokens,
             "return_citations": True
         }
 
@@ -219,7 +225,11 @@ Format your response as the JSON structure specified in your instructions."""
             }
 
     def _build_markdown(self, sections: dict, topic: str) -> str:
-        """Build markdown content from structured sections."""
+        """Build markdown content from any structured JSON sections.
+
+        Handles arbitrary JSON structures by converting keys to readable
+        headings and rendering values based on their type (string, list, dict, etc.).
+        """
         md = f"# Briefing Book: {topic}\n\n"
 
         # Safety check - ensure sections is a dict
@@ -227,37 +237,145 @@ Format your response as the JSON structure specified in your instructions."""
             logger.warning(f"_build_markdown received non-dict: {type(sections).__name__}")
             return md + str(sections) if sections else md
 
-        if overview := sections.get("overview"):
-            md += f"## Overview\n\n{overview}\n\n"
-
-        if args_for := sections.get("arguments_for"):
-            md += "## Arguments in Favor\n\n"
-            for arg in args_for:
-                md += f"- {arg}\n"
-            md += "\n"
-
-        if args_against := sections.get("arguments_against"):
-            md += "## Arguments Against\n\n"
-            for arg in args_against:
-                md += f"- {arg}\n"
-            md += "\n"
-
-        if options := sections.get("policy_options"):
-            md += "## Policy Options\n\n"
-            for i, option in enumerate(options, 1):
-                md += f"{i}. {option}\n"
-            md += "\n"
-
-        if facts := sections.get("key_facts"):
-            md += "## Key Facts and Statistics\n\n"
-            for fact in facts:
-                md += f"- {fact}\n"
-            md += "\n"
-
-        if considerations := sections.get("considerations"):
-            md += f"## Additional Considerations\n\n{considerations}\n\n"
+        for key, value in sections.items():
+            if value is None:
+                continue
+            heading = self._key_to_heading(key)
+            md += self._render_section(heading, value, level=2)
 
         return md
+
+    def _key_to_heading(self, key: str) -> str:
+        """Convert a JSON key like 'problem_landscape' to 'Problem Landscape'."""
+        return key.replace("_", " ").replace("-", " ").title()
+
+    def _render_section(self, heading: str, value, level: int = 2) -> str:
+        """Recursively render a section value into markdown.
+
+        Handles: str, list[str], list[dict], dict[str, str], dict[str, Any].
+        """
+        prefix = "#" * level
+        md = ""
+
+        if isinstance(value, str):
+            md += f"{prefix} {heading}\n\n{value}\n\n"
+
+        elif isinstance(value, list):
+            md += f"{prefix} {heading}\n\n"
+            for i, item in enumerate(value, 1):
+                if isinstance(item, str):
+                    md += f"- {item}\n"
+                elif isinstance(item, dict):
+                    # Render each dict item as a sub-section
+                    # Use a summary field if available, else the first string value
+                    sub_label = (
+                        item.get("issue")
+                        or item.get("approach")
+                        or item.get("title")
+                        or item.get("name")
+                        or f"Item {i}"
+                    )
+                    md += f"\n{'#' * (level + 1)} {sub_label}\n\n"
+                    for k, v in item.items():
+                        if k in ("issue", "approach", "title", "name"):
+                            continue  # Already used as heading
+                        label = self._key_to_heading(k)
+                        if isinstance(v, str):
+                            md += f"**{label}:** {v}\n\n"
+                        elif isinstance(v, list):
+                            md += f"**{label}:**\n"
+                            for sub_item in v:
+                                md += f"- {sub_item}\n"
+                            md += "\n"
+                        else:
+                            md += f"**{label}:** {v}\n\n"
+                else:
+                    md += f"- {item}\n"
+            md += "\n"
+
+        elif isinstance(value, dict):
+            md += f"{prefix} {heading}\n\n"
+            for k, v in value.items():
+                label = self._key_to_heading(k)
+                if isinstance(v, str):
+                    md += f"**{label}:** {v}\n\n"
+                elif isinstance(v, list):
+                    md += f"**{label}:**\n"
+                    for item in v:
+                        md += f"- {item}\n"
+                    md += "\n"
+                elif isinstance(v, dict):
+                    md += self._render_section(label, v, level=level + 1)
+                else:
+                    md += f"**{label}:** {v}\n\n"
+
+        else:
+            # Fallback for other types (int, bool, etc.)
+            md += f"{prefix} {heading}\n\n{value}\n\n"
+
+        return md
+
+    async def research_query(self, query: str, max_tokens: int = 2000) -> dict:
+        """
+        Perform a focused follow-up research query.
+
+        Used between deliberation rounds to answer specific questions
+        that emerged from the discussion.
+
+        Args:
+            query: The specific research question to answer
+            max_tokens: Maximum tokens for the response
+
+        Returns:
+            Dict with query, content, and sources
+        """
+        if not self.is_available:
+            logger.warning("Perplexity API not available for research query")
+            return {
+                "query": query,
+                "content": f"Research unavailable for: {query}",
+                "sources": []
+            }
+
+        system_prompt = (
+            "You are a research assistant. Answer the following question with accurate, "
+            "well-sourced information. Be concise and factual. Include specific data, "
+            "statistics, and expert opinions where available. Cite your sources."
+        )
+
+        try:
+            response = await self._call_api(
+                prompt=query,
+                max_tokens=max_tokens,
+                system_prompt=system_prompt
+            )
+
+            content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            sources = []
+            if "citations" in response:
+                for citation in response["citations"]:
+                    if isinstance(citation, str):
+                        sources.append({"title": citation, "url": citation})
+                    elif isinstance(citation, dict):
+                        sources.append({
+                            "title": citation.get("title", ""),
+                            "url": citation.get("url", "")
+                        })
+
+            return {
+                "query": query,
+                "content": content,
+                "sources": sources
+            }
+
+        except Exception as e:
+            logger.error(f"Research query failed: {e}")
+            return {
+                "query": query,
+                "content": f"Research query failed: {str(e)}",
+                "sources": []
+            }
 
     def _generate_fallback_briefing(self, topic: str) -> dict:
         """

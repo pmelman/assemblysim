@@ -297,7 +297,8 @@ def get_assembly_with_details(db: Session, assembly_id: int) -> Optional[Assembl
         joinedload(Assembly.citizens),
         joinedload(Assembly.groups),
         joinedload(Assembly.briefing_book),
-        joinedload(Assembly.report)
+        joinedload(Assembly.report),
+        joinedload(Assembly.round_research)
     ).filter(Assembly.id == assembly_id).first()
 
 
