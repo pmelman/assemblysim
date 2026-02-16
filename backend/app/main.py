@@ -8,15 +8,16 @@ Configures the FastAPI app, middleware, and routes.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.models.database import init_db
+from app.models.database import init_db, get_db
 from app.api.assemblies import router as assemblies_router
 from app.api.websocket import router as websocket_router
 from app.api.settings import router as settings_router
 from app.api.custom_citizens import router as custom_citizens_router
+from app.api.auth import router as auth_router, get_current_user, hash_password
 from app.models.schemas import HealthResponse
 
 # Configure logging
@@ -25,6 +26,38 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def seed_admin_user():
+    """Create admin user from env vars if no users exist."""
+    from app.models.database import SessionLocal
+    from app.models.models import User
+
+    settings = get_settings()
+    if not settings.ADMIN_EMAIL or not settings.ADMIN_PASSWORD:
+        logger.warning("ADMIN_EMAIL/ADMIN_PASSWORD not set, skipping admin seed")
+        return
+
+    db = SessionLocal()
+    try:
+        user_count = db.query(User).count()
+        if user_count == 0:
+            admin = User(
+                email=settings.ADMIN_EMAIL,
+                username="admin",
+                hashed_password=hash_password(settings.ADMIN_PASSWORD),
+                is_admin=True,
+            )
+            db.add(admin)
+            db.commit()
+            logger.info(f"Admin user created: {settings.ADMIN_EMAIL}")
+        else:
+            logger.info(f"Users already exist ({user_count}), skipping admin seed")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to seed admin user: {e}")
+    finally:
+        db.close()
 
 
 @asynccontextmanager
@@ -41,6 +74,9 @@ async def lifespan(app: FastAPI):
     # Initialize database
     init_db()
     logger.info("Database initialized")
+
+    # Seed admin user if needed
+    seed_admin_user()
 
     yield
 
@@ -68,7 +104,7 @@ app.add_middleware(
 
 
 # =============================================================================
-# HEALTH CHECK ENDPOINTS
+# HEALTH CHECK ENDPOINTS (unauthenticated)
 # =============================================================================
 
 @app.get("/", tags=["health"])
@@ -108,10 +144,16 @@ def health_check():
 # INCLUDE ROUTERS
 # =============================================================================
 
-app.include_router(assemblies_router)
+# Auth router (unauthenticated — handles its own auth)
+app.include_router(auth_router)
+
+# Protected routers — require valid JWT for all endpoints
+app.include_router(assemblies_router, dependencies=[Depends(get_current_user)])
+app.include_router(settings_router, dependencies=[Depends(get_current_user)])
+app.include_router(custom_citizens_router, dependencies=[Depends(get_current_user)])
+
+# WebSocket router — keep unauthenticated for now (WS auth is more complex)
 app.include_router(websocket_router)
-app.include_router(settings_router)
-app.include_router(custom_citizens_router)
 
 
 # =============================================================================

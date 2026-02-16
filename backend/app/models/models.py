@@ -17,6 +17,43 @@ from sqlalchemy.orm import relationship
 from app.models.database import Base
 
 
+class User(Base):
+    """User account for authentication and access control."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    invite_codes_created = relationship("InviteCode", foreign_keys="InviteCode.created_by_user_id", back_populates="created_by")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email='{self.email}', is_admin={self.is_admin})>"
+
+
+class InviteCode(Base):
+    """Invite codes for user registration."""
+    __tablename__ = "invite_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(64), unique=True, nullable=False, index=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    used_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    created_by = relationship("User", foreign_keys=[created_by_user_id], back_populates="invite_codes_created")
+    used_by = relationship("User", foreign_keys=[used_by_user_id])
+
+    def __repr__(self):
+        return f"<InviteCode(id={self.id}, code='{self.code[:8]}...', used={'yes' if self.used_by_user_id else 'no'})>"
+
+
 class AssemblyStatus(str, enum.Enum):
     """Status of an assembly through its lifecycle."""
     PENDING = "pending"              # Created, awaiting citizen generation

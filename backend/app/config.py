@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     DATA_DIR: Path = Path(__file__).parent.parent.parent.parent / "data"
     GSS_DATA_PATH: Path = DATA_DIR / "GSS_stata" / "gss7224_r2.dta"
 
+    # Authentication
+    SECRET_KEY: str = ""  # Required for JWT signing - set in .env
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+
+    # Admin bootstrap
+    ADMIN_EMAIL: str = ""
+    ADMIN_PASSWORD: str = ""
+
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 

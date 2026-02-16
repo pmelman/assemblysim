@@ -21,6 +21,11 @@ import type {
   CustomCitizenTemplate,
   CustomCitizenCreateRequest,
   CustomCitizenUpdateRequest,
+  LoginRequest,
+  RegisterRequest,
+  TokenResponse,
+  User,
+  InviteCodeResponse,
 } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -37,6 +42,17 @@ class ApiError extends Error {
   }
 }
 
+// =============================================================================
+// AUTH HELPERS
+// =============================================================================
+
+function getAuthHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const token = localStorage.getItem('auth_token');
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let errorData: ErrorResponse | null = null;
@@ -46,7 +62,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
       // Response body is not JSON
     }
     throw new ApiError(
-      errorData?.error || `HTTP error ${response.status}`,
+      errorData?.error || errorData?.detail || `HTTP error ${response.status}`,
       response.status,
       errorData?.detail
     );
@@ -61,6 +77,59 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 // =============================================================================
+// AUTH ENDPOINTS
+// =============================================================================
+
+export async function login(request: LoginRequest): Promise<TokenResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<TokenResponse>(response);
+}
+
+export async function register(request: RegisterRequest): Promise<TokenResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<TokenResponse>(response);
+}
+
+export async function getMe(): Promise<User> {
+  const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    headers: { ...getAuthHeaders() },
+  });
+  return handleResponse<User>(response);
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<User> {
+  const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  return handleResponse<User>(response);
+}
+
+export async function createInviteCode(): Promise<InviteCodeResponse> {
+  const response = await fetch(`${API_BASE_URL}/auth/invite-codes`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders() },
+  });
+  return handleResponse<InviteCodeResponse>(response);
+}
+
+export async function listInviteCodes(): Promise<InviteCodeResponse[]> {
+  const response = await fetch(`${API_BASE_URL}/auth/invite-codes`, {
+    headers: { ...getAuthHeaders() },
+  });
+  return handleResponse<InviteCodeResponse[]>(response);
+}
+
+// =============================================================================
 // ASSEMBLY ENDPOINTS
 // =============================================================================
 
@@ -69,7 +138,7 @@ export async function createAssembly(
 ): Promise<AssemblyResponse> {
   const response = await fetch(`${API_BASE_URL}/assemblies`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(request),
   });
   return handleResponse<AssemblyResponse>(response);
@@ -87,18 +156,23 @@ export async function listAssemblies(
   if (status) {
     params.append('status', status);
   }
-  const response = await fetch(`${API_BASE_URL}/assemblies?${params}`);
+  const response = await fetch(`${API_BASE_URL}/assemblies?${params}`, {
+    headers: { ...getAuthHeaders() },
+  });
   return handleResponse<AssemblyListResponse>(response);
 }
 
 export async function getAssembly(id: number): Promise<AssemblyDetailResponse> {
-  const response = await fetch(`${API_BASE_URL}/assemblies/${id}`);
+  const response = await fetch(`${API_BASE_URL}/assemblies/${id}`, {
+    headers: { ...getAuthHeaders() },
+  });
   return handleResponse<AssemblyDetailResponse>(response);
 }
 
 export async function deleteAssembly(id: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/assemblies/${id}`, {
     method: 'DELETE',
+    headers: { ...getAuthHeaders() },
   });
   return handleResponse<void>(response);
 }
@@ -112,7 +186,7 @@ export async function generateCitizens(
 ): Promise<{ message: string; assembly_id: number; num_citizens: number; num_groups: number }> {
   const response = await fetch(
     `${API_BASE_URL}/assemblies/${assemblyId}/citizens`,
-    { method: 'POST' }
+    { method: 'POST', headers: { ...getAuthHeaders() } }
   );
   return handleResponse<{ message: string; assembly_id: number; num_citizens: number; num_groups: number }>(response);
 }
@@ -127,7 +201,8 @@ export async function listCitizens(
   }
   const query = params.toString() ? `?${params}` : '';
   const response = await fetch(
-    `${API_BASE_URL}/assemblies/${assemblyId}/citizens${query}`
+    `${API_BASE_URL}/assemblies/${assemblyId}/citizens${query}`,
+    { headers: { ...getAuthHeaders() } }
   );
   return handleResponse<CitizenResponse[]>(response);
 }
@@ -137,7 +212,8 @@ export async function getCitizen(
   citizenId: number
 ): Promise<CitizenDetailResponse> {
   const response = await fetch(
-    `${API_BASE_URL}/assemblies/${assemblyId}/citizens/${citizenId}`
+    `${API_BASE_URL}/assemblies/${assemblyId}/citizens/${citizenId}`,
+    { headers: { ...getAuthHeaders() } }
   );
   return handleResponse<CitizenDetailResponse>(response);
 }
@@ -154,7 +230,7 @@ export async function generateBriefing(
     `${API_BASE_URL}/assemblies/${assemblyId}/briefing`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(request),
     }
   );
@@ -165,7 +241,8 @@ export async function getBriefing(
   assemblyId: number
 ): Promise<BriefingBookResponse> {
   const response = await fetch(
-    `${API_BASE_URL}/assemblies/${assemblyId}/briefing`
+    `${API_BASE_URL}/assemblies/${assemblyId}/briefing`,
+    { headers: { ...getAuthHeaders() } }
   );
   return handleResponse<BriefingBookResponse>(response);
 }
@@ -173,7 +250,7 @@ export async function getBriefing(
 export async function deleteBriefing(assemblyId: number): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/assemblies/${assemblyId}/briefing`,
-    { method: 'DELETE' }
+    { method: 'DELETE', headers: { ...getAuthHeaders() } }
   );
   return handleResponse<void>(response);
 }
@@ -187,7 +264,7 @@ export async function startDeliberation(
 ): Promise<{ message: string; assembly_id: number; status: string; citizens: number }> {
   const response = await fetch(
     `${API_BASE_URL}/assemblies/${assemblyId}/start`,
-    { method: 'POST' }
+    { method: 'POST', headers: { ...getAuthHeaders() } }
   );
   return handleResponse<{ message: string; assembly_id: number; status: string; citizens: number }>(response);
 }
@@ -220,7 +297,8 @@ export async function listMessages(
   }
   const query = params.toString() ? `?${params}` : '';
   const response = await fetch(
-    `${API_BASE_URL}/assemblies/${assemblyId}/messages${query}`
+    `${API_BASE_URL}/assemblies/${assemblyId}/messages${query}`,
+    { headers: { ...getAuthHeaders() } }
   );
   return handleResponse<MessageResponse[]>(response);
 }
@@ -231,7 +309,8 @@ export async function listMessages(
 
 export async function listGroups(assemblyId: number): Promise<GroupResponse[]> {
   const response = await fetch(
-    `${API_BASE_URL}/assemblies/${assemblyId}/groups`
+    `${API_BASE_URL}/assemblies/${assemblyId}/groups`,
+    { headers: { ...getAuthHeaders() } }
   );
   return handleResponse<GroupResponse[]>(response);
 }
@@ -242,7 +321,8 @@ export async function listGroups(assemblyId: number): Promise<GroupResponse[]> {
 
 export async function getReport(assemblyId: number): Promise<ReportResponse> {
   const response = await fetch(
-    `${API_BASE_URL}/assemblies/${assemblyId}/report`
+    `${API_BASE_URL}/assemblies/${assemblyId}/report`,
+    { headers: { ...getAuthHeaders() } }
   );
   return handleResponse<ReportResponse>(response);
 }
@@ -252,7 +332,9 @@ export async function getReport(assemblyId: number): Promise<ReportResponse> {
 // =============================================================================
 
 export async function getAppSettings(): Promise<AppSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings`);
+  const response = await fetch(`${API_BASE_URL}/settings`, {
+    headers: { ...getAuthHeaders() },
+  });
   return handleResponse<AppSettings>(response);
 }
 
@@ -261,7 +343,7 @@ export async function updateAppSettings(
 ): Promise<AppSettings> {
   const response = await fetch(`${API_BASE_URL}/settings`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(request),
   });
   return handleResponse<AppSettings>(response);
@@ -281,7 +363,8 @@ export async function listResearch(
   }
   const query = params.toString() ? `?${params}` : '';
   const response = await fetch(
-    `${API_BASE_URL}/assemblies/${assemblyId}/research${query}`
+    `${API_BASE_URL}/assemblies/${assemblyId}/research${query}`,
+    { headers: { ...getAuthHeaders() } }
   );
   return handleResponse<RoundResearchResponse[]>(response);
 }
@@ -295,19 +378,23 @@ export async function createCustomCitizen(
 ): Promise<CustomCitizenTemplate> {
   const response = await fetch(`${API_BASE_URL}/custom-citizens`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(request),
   });
   return handleResponse<CustomCitizenTemplate>(response);
 }
 
 export async function listCustomCitizens(): Promise<CustomCitizenTemplate[]> {
-  const response = await fetch(`${API_BASE_URL}/custom-citizens`);
+  const response = await fetch(`${API_BASE_URL}/custom-citizens`, {
+    headers: { ...getAuthHeaders() },
+  });
   return handleResponse<CustomCitizenTemplate[]>(response);
 }
 
 export async function getCustomCitizen(id: number): Promise<CustomCitizenTemplate> {
-  const response = await fetch(`${API_BASE_URL}/custom-citizens/${id}`);
+  const response = await fetch(`${API_BASE_URL}/custom-citizens/${id}`, {
+    headers: { ...getAuthHeaders() },
+  });
   return handleResponse<CustomCitizenTemplate>(response);
 }
 
@@ -317,7 +404,7 @@ export async function updateCustomCitizen(
 ): Promise<CustomCitizenTemplate> {
   const response = await fetch(`${API_BASE_URL}/custom-citizens/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(request),
   });
   return handleResponse<CustomCitizenTemplate>(response);
@@ -326,6 +413,7 @@ export async function updateCustomCitizen(
 export async function deleteCustomCitizen(id: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/custom-citizens/${id}`, {
     method: 'DELETE',
+    headers: { ...getAuthHeaders() },
   });
   return handleResponse<void>(response);
 }

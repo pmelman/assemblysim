@@ -8,7 +8,62 @@ request bodies, response models, and WebSocket messages.
 from datetime import datetime
 from typing import Optional, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
+
+
+# =============================================================================
+# AUTH SCHEMAS
+# =============================================================================
+
+class RegisterRequest(BaseModel):
+    """Request body for user registration."""
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., min_length=8, description="Password (min 8 chars)")
+    username: str = Field(..., min_length=2, max_length=100, description="Display name")
+    invite_code: str = Field(..., description="Valid invite code")
+
+
+class LoginRequest(BaseModel):
+    """Request body for user login."""
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., description="Password")
+
+
+class UserResponse(BaseModel):
+    """Response model for user info."""
+    id: int
+    email: str
+    username: str
+    is_admin: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TokenResponse(BaseModel):
+    """Response model for authentication token."""
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class ChangePasswordRequest(BaseModel):
+    """Request body for changing password."""
+    current_password: str = Field(..., description="Current password")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 chars)")
+
+
+class InviteCodeResponse(BaseModel):
+    """Response model for an invite code."""
+    id: int
+    code: str
+    created_at: datetime
+    used_at: Optional[datetime] = None
+    used_by_username: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 
 # =============================================================================

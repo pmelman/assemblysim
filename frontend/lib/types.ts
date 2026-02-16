@@ -25,6 +25,44 @@ export type VoteValue = 'support' | 'oppose' | 'abstain';
 export type FactCheckStatus = 'verified' | 'disputed' | 'unchecked';
 
 // =============================================================================
+// AUTH TYPES
+// =============================================================================
+
+export interface User {
+  id: number;
+  email: string;
+  username: string;
+  is_admin: boolean;
+  created_at: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  username: string;
+  invite_code: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface InviteCodeResponse {
+  id: number;
+  code: string;
+  created_at: string;
+  used_at: string | null;
+  used_by_username: string | null;
+}
+
+// =============================================================================
 // REQUEST TYPES
 // =============================================================================
 
