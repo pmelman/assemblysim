@@ -247,32 +247,40 @@ Present all sides fairly without taking a position."""
         Returns:
             Minority report text
         """
-        # Determine minority position
-        support = vote_results.get("support", 0)
-        oppose = vote_results.get("oppose", 0)
-        minority_position = "opposition" if support > oppose else "support"
+        # Build vote context for both old and new formats
+        if 'total_proposals' in vote_results:
+            # New score-voting format
+            vote_text = (
+                f"Proposals scored: {vote_results.get('total_proposals', 0)}, "
+                f"Passed: {vote_results.get('passed', 0)}, "
+                f"Did not pass: {vote_results.get('failed', 0)}"
+            )
+            minority_context = "proposals that did not pass or perspectives not fully represented in the passing proposals"
+        else:
+            # Legacy format
+            support = vote_results.get("support", 0)
+            oppose = vote_results.get("oppose", 0)
+            vote_text = f"Support: {support}, Oppose: {oppose}, Abstain: {vote_results.get('abstain', 0)}"
+            minority_context = "opposition" if support > oppose else "support"
 
         prompt = f"""Generate a minority report for this deliberation:
 
 TOPIC: {self.topic}
 
-Vote Results:
-- Support: {support}
-- Oppose: {oppose}
-- Abstain: {vote_results.get('abstain', 0)}
+Vote Results: {vote_text}
 
-The minority position was {minority_position}.
+The minority perspective includes: {minority_context}
 
 TRANSCRIPT:
 {transcript}
 
 Write a minority report (2-3 paragraphs) that:
-1. Fairly represents the minority viewpoint
-2. Captures their main arguments and concerns
-3. Notes the values and reasoning behind their position
-4. Respects their perspective without dismissing it
+1. Fairly represents perspectives that were not fully captured in the passing proposals
+2. Captures minority arguments, concerns, and low-scoring proposals
+3. Notes the values and reasoning behind dissenting positions
+4. Respects these perspectives without dismissing them
 
-This should give voice to those who disagreed with the majority."""
+This should give voice to those whose views were not fully represented in the final recommendations."""
 
         try:
             response = await self.llm.complete(
@@ -312,6 +320,33 @@ This should give voice to those who disagreed with the majority."""
 
         themes_text = ", ".join(themes) if themes else "various considerations"
 
+        # Build vote results text for both old and new formats
+        if 'total_proposals' in vote_results:
+            # New score-voting format
+            vote_text = (
+                f"- Total proposals scored: {vote_results.get('total_proposals', 0)}\n"
+                f"- Proposals that passed (avg score >3/5): {vote_results.get('passed', 0)}\n"
+                f"- Proposals that did not pass: {vote_results.get('failed', 0)}\n"
+                f"- Total voters: {vote_results.get('total_voters', 0)}"
+            )
+        else:
+            # Legacy support/oppose/abstain format
+            vote_text = (
+                f"- Support: {vote_results.get('support', 0)}\n"
+                f"- Oppose: {vote_results.get('oppose', 0)}\n"
+                f"- Abstain: {vote_results.get('abstain', 0)}\n"
+                f"- Total: {vote_results.get('total', 0)}"
+            )
+
+        # Include recommendation scores if available
+        rec_detail_lines = []
+        for rec in recommendations:
+            line = f"- {rec.get('title', 'Recommendation')}"
+            if 'avg_score' in rec:
+                line += f" (avg score: {rec['avg_score']}/5)"
+            rec_detail_lines.append(line)
+        rec_detail_text = "\n".join(rec_detail_lines)
+
         prompt = f"""Generate an executive summary for this citizens' assembly:
 
 TOPIC: {self.topic}
@@ -319,13 +354,10 @@ TOPIC: {self.topic}
 KEY THEMES: {themes_text}
 
 RECOMMENDATIONS CONSIDERED:
-{rec_text}
+{rec_detail_text}
 
-VOTE RESULTS:
-- Support: {vote_results.get('support', 0)}
-- Oppose: {vote_results.get('oppose', 0)}
-- Abstain: {vote_results.get('abstain', 0)}
-- Total: {vote_results.get('total', sum(vote_results.values()))}
+SCORE VOTING RESULTS:
+{vote_text}
 
 TRANSCRIPT EXCERPT (for context):
 {full_transcript[:2000]}
@@ -333,7 +365,7 @@ TRANSCRIPT EXCERPT (for context):
 Write an executive summary (3-4 paragraphs) that:
 1. Introduces the topic and purpose of the assembly
 2. Summarizes the deliberation process and key discussions
-3. Reports the outcome and vote results
+3. Reports the score voting outcome — which proposals passed and their scores
 4. Notes the significance of the findings
 
 Be objective and comprehensive. This summary will be read by policymakers and the public."""

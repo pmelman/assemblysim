@@ -79,7 +79,7 @@ class RoundPromptConfig(BaseModel):
 class AssemblyCreateRequest(BaseModel):
     """Request body for creating a new assembly."""
     topic: str = Field(..., min_length=5, max_length=500, description="The policy topic for deliberation")
-    num_citizens: int = Field(default=40, ge=8, le=100, description="Number of citizens to generate")
+    num_citizens: int = Field(default=40, ge=4, le=100, description="Number of citizens to generate")
     num_groups: int = Field(default=5, ge=1, le=10, description="Number of deliberation groups")
     num_rounds: int = Field(default=3, ge=1, le=10, description="Number of deliberation rounds")
     sampling_strategy: str = Field(default="stratified", description="Sampling strategy: stratified, quota, or random")
@@ -201,7 +201,8 @@ class ReportResponse(BaseModel):
     assembly_id: int
     executive_summary: Optional[str] = None
     recommendations: Optional[list[dict[str, Any]]] = None
-    vote_tally: Optional[dict[str, int]] = None
+    vote_tally: Optional[dict[str, Any]] = None
+    proposal_scores: Optional[list[dict[str, Any]]] = None
     minority_report: Optional[str] = None
     key_themes: Optional[list[str]] = None
     generated_at: datetime
@@ -335,7 +336,7 @@ class AppSettingsResponse(BaseModel):
 
 class AppSettingsUpdateRequest(BaseModel):
     """Request body for updating application settings. All fields optional."""
-    default_num_citizens: Optional[int] = Field(default=None, ge=8, le=100)
+    default_num_citizens: Optional[int] = Field(default=None, ge=4, le=100)
     default_num_groups: Optional[int] = Field(default=None, ge=1, le=10)
     default_num_rounds: Optional[int] = Field(default=None, ge=1, le=10)
     default_sampling_strategy: Optional[str] = None

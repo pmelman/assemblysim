@@ -28,6 +28,7 @@ from app.agents import CitizenAgent, ModeratorAgent, RecorderAgent, FactCheckerA
 from app.config import get_settings
 from app.knowledge.perplexity_client import get_perplexity_client
 from app.llm_client import get_llm_client
+from app.prompt_loader import get_moderator_proposal_prompt, get_moderator_score_voting_transition
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -139,8 +140,9 @@ class DeliberationEngine:
             if settings.ENABLE_PLENARY_PHASE and len(self.groups) > 0:
                 await self._run_plenary()
 
-            # 5. Voting
-            await self._run_voting()
+            # 5. Proposal generation & score voting
+            await self._run_proposal_round()
+            await self._run_assembly_score_voting()
 
             # 6. Final report
             await self._generate_report()
@@ -773,104 +775,414 @@ Return between 1 and 3 queries. If no factual questions need researching, return
         # Fallback to first citizen
         return group_citizens[0]
 
-    async def _run_voting(self):
-        """Run the voting phase."""
-        logger.info("Starting voting phase")
+    def _parse_proposals(self, response: str, citizen_id: int, group_name: str) -> list[dict]:
+        """
+        Parse policy proposals from a citizen's response.
 
-        await self._update_status(AssemblyStatus.VOTING, "Voting in progress")
+        Args:
+            response: Raw citizen response text
+            citizen_id: ID of the citizen who proposed
+            group_name: Name of the citizen's group
 
-        # Create recommendations from discussion
-        recommendations = [
-            {
-                "title": f"Recommendation on {self.assembly.topic}",
-                "description": "Based on the deliberation, participants will vote on this policy proposal."
-            }
-        ]
+        Returns:
+            List of proposal dicts
+        """
+        proposals = []
+        # Split on PROPOSAL N: pattern
+        parts = re.split(r'PROPOSAL\s+\d+\s*:', response)
 
-        # Moderator transitions to voting
+        for part in parts[1:]:  # Skip text before first PROPOSAL
+            lines = part.strip().split('\n', 1)
+            title = lines[0].strip()
+            description = lines[1].strip() if len(lines) > 1 else title
+
+            if title:
+                proposals.append({
+                    "title": title,
+                    "description": description,
+                    "citizen_id": citizen_id,
+                    "group": group_name
+                })
+
+        # Fallback: if no proposals were parsed, treat entire response as one
+        if not proposals and response.strip():
+            proposals.append({
+                "title": f"Proposal from citizen {citizen_id}",
+                "description": response.strip()[:500],
+                "citizen_id": citizen_id,
+                "group": group_name
+            })
+
+        return proposals
+
+    async def _run_proposal_round(self):
+        """
+        Run proposal generation and intra-group score voting.
+
+        1. Each group generates proposals (one round of citizen responses)
+        2. Intra-group score voting selects top 2 per group
+        3. Moderator deduplicates similar proposals across groups
+        """
+        logger.info("Starting proposal generation round")
+        await self._update_status(AssemblyStatus.VOTING, "Proposal generation in progress")
+
+        # Get discussion summary for context
         full_transcript = self._get_full_transcript()
         discussion_summary = await self.recorder.generate_consensus_summary(
             transcript=full_transcript
         )
 
-        transition = await self.moderator.transition_to_voting(
-            discussion_summary=discussion_summary,
-            recommendations=recommendations
+        all_advancing_proposals = []
+
+        if settings.ENABLE_GROUP_DELIBERATION and len(self.groups) > 0:
+            for group in self.groups:
+                group_citizens = [c for c in self.citizens if c.group_id == group.id]
+                if not group_citizens:
+                    continue
+
+                # Moderator opens proposal round for this group
+                proposal_prompt = get_moderator_proposal_prompt()
+                await self._save_message(
+                    role="moderator",
+                    content=f"[Group {group.name}] {proposal_prompt}",
+                    phase="proposals",
+                    group_id=group.id
+                )
+
+                # Each citizen proposes 1-2 ideas
+                group_proposals = []
+                group_context = self._get_group_context(group.id, limit=10)
+
+                for citizen in group_citizens:
+                    agent = self.citizen_agents[citizen.id]
+                    response = await agent.propose_policies(
+                        discussion_context=discussion_summary,
+                        group_context=group_context
+                    )
+
+                    await self._save_message(
+                        role="citizen",
+                        content=response,
+                        phase="proposals",
+                        citizen_id=citizen.id,
+                        group_id=group.id
+                    )
+
+                    # Parse proposals
+                    parsed = self._parse_proposals(response, citizen.id, group.name)
+                    group_proposals.extend(parsed)
+
+                # Intra-group score voting — top 2 advance
+                if len(group_proposals) > 2:
+                    top_proposals = await self._run_group_score_voting(
+                        group, group_proposals, discussion_summary
+                    )
+                else:
+                    top_proposals = group_proposals
+
+                all_advancing_proposals.extend(top_proposals)
+
+                if self.broadcast:
+                    await self.broadcast(self.assembly_id, {
+                        "type": "group_proposals_complete",
+                        "group": group.name,
+                        "num_proposals": len(top_proposals)
+                    })
+        else:
+            # No groups: all citizens propose together
+            proposal_prompt = get_moderator_proposal_prompt()
+            await self._save_message(
+                role="moderator",
+                content=proposal_prompt,
+                phase="proposals"
+            )
+
+            context = self._get_recent_context(limit=10)
+            for citizen in self.citizens:
+                agent = self.citizen_agents[citizen.id]
+                response = await agent.propose_policies(
+                    discussion_context=discussion_summary,
+                    group_context=context
+                )
+
+                await self._save_message(
+                    role="citizen",
+                    content=response,
+                    phase="proposals",
+                    citizen_id=citizen.id
+                )
+
+                parsed = self._parse_proposals(response, citizen.id, "All")
+                all_advancing_proposals.extend(parsed)
+
+            # If many proposals, do intra-assembly score voting to trim
+            if len(all_advancing_proposals) > 6:
+                all_advancing_proposals = await self._run_group_score_voting(
+                    None, all_advancing_proposals, discussion_summary, top_n=6
+                )
+
+        logger.info(f"Total advancing proposals: {len(all_advancing_proposals)}")
+
+        # Moderator deduplication
+        if len(all_advancing_proposals) > 1:
+            self.deduplicated_proposals = await self._run_moderator_deduplication(
+                all_advancing_proposals
+            )
+        else:
+            self.deduplicated_proposals = all_advancing_proposals
+
+        self.discussion_summary = discussion_summary
+
+        logger.info(f"Deduplicated to {len(self.deduplicated_proposals)} proposals")
+
+        if self.broadcast:
+            await self.broadcast(self.assembly_id, {
+                "type": "proposals_ready",
+                "num_proposals": len(self.deduplicated_proposals)
+            })
+
+    async def _run_group_score_voting(
+        self,
+        group: Optional[DeliberationGroup],
+        proposals: list[dict],
+        discussion_summary: str,
+        top_n: int = 2
+    ) -> list[dict]:
+        """
+        Run intra-group score voting to select top proposals.
+
+        Args:
+            group: The group (or None for all citizens)
+            proposals: List of proposal dicts to vote on
+            discussion_summary: Discussion summary for context
+            top_n: Number of top proposals to advance
+
+        Returns:
+            Top-scoring proposals
+        """
+        if group:
+            voters = [c for c in self.citizens if c.group_id == group.id]
+            group_label = f"Group {group.name}"
+        else:
+            voters = list(self.citizens)
+            group_label = "Assembly"
+
+        # Collect scores from each voter
+        all_scores = {i: [] for i in range(len(proposals))}
+
+        for citizen in voters:
+            agent = self.citizen_agents[citizen.id]
+            scores = await agent.score_vote(proposals, discussion_summary)
+
+            # Build score message for the chat
+            score_lines = []
+            for idx in range(len(proposals)):
+                score = scores.get(idx, 3)
+                all_scores[idx].append(score)
+                score_lines.append(f"{idx+1}. {proposals[idx]['title']}: {score}/5")
+
+            await self._save_message(
+                role="citizen",
+                content=f"[{group_label} Intra-Group Vote]\nSCORES:\n" + "\n".join(score_lines),
+                phase="proposals",
+                citizen_id=citizen.id,
+                group_id=group.id if group else None
+            )
+
+        # Calculate averages
+        avg_scores = {}
+        for idx, score_list in all_scores.items():
+            if score_list:
+                avg_scores[idx] = sum(score_list) / len(score_list)
+            else:
+                avg_scores[idx] = 0
+
+        # Sort by average score, take top N
+        sorted_indices = sorted(avg_scores, key=avg_scores.get, reverse=True)
+        top_indices = sorted_indices[:top_n]
+
+        top_proposals = []
+        for idx in top_indices:
+            proposal = proposals[idx].copy()
+            proposal["group_avg_score"] = round(avg_scores[idx], 2)
+            top_proposals.append(proposal)
+
+        logger.info(f"{group_label} top {top_n} proposals selected (scores: {[p['group_avg_score'] for p in top_proposals]})")
+        return top_proposals
+
+    async def _run_moderator_deduplication(self, proposals: list[dict]) -> list[dict]:
+        """
+        Have the moderator deduplicate similar proposals.
+
+        Args:
+            proposals: All advancing proposals from groups
+
+        Returns:
+            Deduplicated proposal list
+        """
+        logger.info(f"Moderator deduplicating {len(proposals)} proposals")
+
+        deduplicated = await self.moderator.deduplicate_proposals(
+            proposals=proposals,
+            topic=self.assembly.topic
         )
+
+        # Save deduplication message
+        original_titles = [p["title"] for p in proposals]
+        dedup_titles = [p["title"] for p in deduplicated]
+
+        dedup_msg = f"After reviewing all {len(proposals)} advancing proposals, "
+        if len(deduplicated) < len(proposals):
+            dedup_msg += f"I've consolidated them into {len(deduplicated)} distinct proposals by merging similar ideas:\n\n"
+        else:
+            dedup_msg += f"all {len(deduplicated)} proposals are sufficiently distinct:\n\n"
+
+        for i, p in enumerate(deduplicated, 1):
+            dedup_msg += f"{i}. **{p['title']}**: {p['description']}\n"
 
         await self._save_message(
             role="moderator",
-            content=transition,
+            content=dedup_msg,
+            phase="proposals"
+        )
+
+        return deduplicated
+
+    async def _run_assembly_score_voting(self):
+        """
+        Run assembly-wide score voting on deduplicated proposals.
+
+        Every citizen scores each proposal 1-5. Proposals averaging >3 pass.
+        Results stored in self.proposal_scores for report generation.
+        """
+        logger.info("Starting assembly-wide score voting")
+
+        proposals = self.deduplicated_proposals
+        discussion_summary = self.discussion_summary
+
+        # Moderator transition
+        transition_text = get_moderator_score_voting_transition()
+        proposals_text = "\n".join([
+            f"{i+1}. **{p['title']}**: {p['description']}"
+            for i, p in enumerate(proposals)
+        ])
+        await self._save_message(
+            role="moderator",
+            content=f"{transition_text}\n\nProposals to score:\n{proposals_text}",
             phase="voting"
         )
 
-        # Each citizen votes
-        vote_tally = {"support": 0, "oppose": 0, "abstain": 0}
+        # Collect scores from ALL citizens
+        all_scores = {i: [] for i in range(len(proposals))}
 
         for citizen in self.citizens:
             agent = self.citizen_agents[citizen.id]
+            scores = await agent.score_vote(proposals, discussion_summary)
 
-            vote_result = await agent.cast_vote(
-                recommendations=recommendations,
-                discussion_summary=discussion_summary
-            )
+            # Build score message
+            score_lines = []
+            for idx in range(len(proposals)):
+                score = scores.get(idx, 3)
+                all_scores[idx].append(score)
+                score_lines.append(f"{idx+1}. {proposals[idx]['title']}: {score}/5")
 
-            # Save vote to database
-            citizen.final_vote = vote_result["vote"]
-            citizen.vote_reasoning = vote_result["reasoning"]
-
-            # Update tally
-            vote_tally[vote_result["vote"]] = vote_tally.get(vote_result["vote"], 0) + 1
-
-            # Save voting message
             await self._save_message(
                 role="citizen",
-                content=f"Vote: {vote_result['vote'].upper()}\n\nReasoning: {vote_result['reasoning']}",
+                content=f"SCORES:\n" + "\n".join(score_lines),
                 phase="voting",
                 citizen_id=citizen.id
             )
 
+            if self.broadcast:
+                await self.broadcast(self.assembly_id, {
+                    "type": "vote_cast",
+                    "citizen": citizen.name,
+                    "progress": f"{self.citizens.index(citizen)+1}/{len(self.citizens)}"
+                })
+
         self.db.commit()
 
-        vote_tally["total"] = len(self.citizens)
-        logger.info(f"Voting complete: {vote_tally}")
+        # Calculate results
+        self.proposal_scores = []
+        passing_proposals = []
 
-        # Moderator closes
+        for idx in range(len(proposals)):
+            scores_list = all_scores[idx]
+            avg = sum(scores_list) / len(scores_list) if scores_list else 0
+            passed = avg > 3
+
+            score_entry = {
+                "title": proposals[idx]["title"],
+                "description": proposals[idx]["description"],
+                "avg_score": round(avg, 2),
+                "num_votes": len(scores_list),
+                "passed": passed
+            }
+            self.proposal_scores.append(score_entry)
+
+            if passed:
+                passing_proposals.append(score_entry)
+
+        self.passing_proposals = passing_proposals
+
+        logger.info(
+            f"Score voting complete: {len(passing_proposals)}/{len(proposals)} proposals passed (>3.0 avg)"
+        )
+
+        # Moderator closing with results
+        full_transcript = self._get_full_transcript()
         themes = await self.recorder.identify_themes(full_transcript)
+
+        results_text = "Score voting results:\n\n"
+        for ps in self.proposal_scores:
+            status = "PASSED" if ps["passed"] else "did not pass"
+            results_text += f"- **{ps['title']}**: avg score {ps['avg_score']}/5 ({status})\n"
+
         closing = await self.moderator.close_assembly(
-            vote_results=vote_tally,
+            vote_results={
+                "total_proposals": len(proposals),
+                "passed": len(passing_proposals),
+                "failed": len(proposals) - len(passing_proposals)
+            },
             key_themes=themes
         )
 
         await self._save_message(
             role="moderator",
-            content=closing,
+            content=f"{results_text}\n\n{closing}",
             phase="closing"
         )
 
-        # Store vote tally for report
-        self.vote_tally = vote_tally
-
-        logger.info("Voting complete")
+        logger.info("Assembly-wide score voting complete")
 
     async def _generate_report(self):
-        """Generate the final assembly report."""
+        """Generate the final assembly report using scored proposals."""
         logger.info("Generating final report")
 
         full_transcript = self._get_full_transcript()
 
-        recommendations = [
-            {
-                "title": f"Policy Recommendation: {self.assembly.topic}",
-                "description": "The assembly deliberated on this topic and reached the following conclusion.",
-                "support_level": "strong" if self.vote_tally["support"] > len(self.citizens) * 0.6 else "moderate"
-            }
-        ]
+        # Build recommendations from passing proposals
+        recommendations = []
+        for ps in self.passing_proposals:
+            recommendations.append({
+                "title": ps["title"],
+                "description": ps["description"],
+                "avg_score": ps["avg_score"],
+                "support_level": "strong" if ps["avg_score"] >= 4.0 else "moderate"
+            })
+
+        # Build vote tally summary for backward compat
+        vote_tally = {
+            "total_proposals": len(self.proposal_scores),
+            "passed": len(self.passing_proposals),
+            "failed": len(self.proposal_scores) - len(self.passing_proposals),
+            "total_voters": len(self.citizens)
+        }
 
         # Generate all report components
         report_data = await self.recorder.generate_final_summary(
             full_transcript=full_transcript,
-            vote_results=self.vote_tally,
+            vote_results=vote_tally,
             recommendations=recommendations
         )
 
@@ -879,7 +1191,8 @@ Return between 1 and 3 queries. If no factual questions need researching, return
             assembly_id=self.assembly_id,
             executive_summary=report_data["executive_summary"],
             recommendations=recommendations,
-            vote_tally=self.vote_tally,
+            vote_tally=vote_tally,
+            proposal_scores=self.proposal_scores,
             minority_report=report_data["minority_report"],
             key_themes=report_data["key_themes"]
         )
@@ -892,7 +1205,8 @@ Return between 1 and 3 queries. If no factual questions need researching, return
         if self.broadcast:
             await self.broadcast(self.assembly_id, {
                 "type": "report_ready",
-                "vote_tally": self.vote_tally,
+                "vote_tally": vote_tally,
+                "proposal_scores": self.proposal_scores,
                 "themes": report_data["key_themes"]
             })
 

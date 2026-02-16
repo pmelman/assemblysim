@@ -3,37 +3,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { Recommendation } from '@/lib/types';
-import { CheckCircle, AlertCircle, HelpCircle } from 'lucide-react';
+import { CheckCircle, XCircle } from 'lucide-react';
 
 interface RecommendationCardProps {
   recommendation: Recommendation;
   index: number;
+  passed?: boolean;
+  avgScore?: number;
 }
 
-const supportLevelConfig = {
-  strong: {
-    icon: CheckCircle,
-    variant: 'green' as const,
-    label: 'Strong Support',
-  },
-  moderate: {
-    icon: AlertCircle,
-    variant: 'yellow' as const,
-    label: 'Moderate Support',
-  },
-  weak: {
-    icon: HelpCircle,
-    variant: 'gray' as const,
-    label: 'Weak Support',
-  },
-};
-
-export function RecommendationCard({ recommendation, index }: RecommendationCardProps) {
-  const config = supportLevelConfig[recommendation.support_level];
-  const Icon = config.icon;
+export function RecommendationCard({ recommendation, index, passed, avgScore }: RecommendationCardProps) {
+  const hasPassed = passed ?? true;
+  const score = avgScore ?? recommendation.avg_score;
 
   return (
-    <Card>
+    <Card className={hasPassed ? '' : 'opacity-70'}>
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base flex items-center gap-2">
@@ -42,10 +26,29 @@ export function RecommendationCard({ recommendation, index }: RecommendationCard
             </span>
             {recommendation.title}
           </CardTitle>
-          <Badge variant={config.variant} className="gap-1 flex-shrink-0">
-            <Icon className="h-3 w-3" />
-            {config.label}
-          </Badge>
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            {score != null && (
+              <Badge variant="outline" className="font-mono text-xs">
+                {score.toFixed(1)} / 5
+              </Badge>
+            )}
+            <Badge
+              variant={hasPassed ? 'green' : 'red'}
+              className="gap-1"
+            >
+              {hasPassed ? (
+                <>
+                  <CheckCircle className="h-3 w-3" />
+                  Passed
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-3 w-3" />
+                  Did Not Pass
+                </>
+              )}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

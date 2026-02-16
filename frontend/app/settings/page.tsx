@@ -136,7 +136,7 @@ export default function SettingsPage() {
               <Input
                 id="default_num_citizens"
                 type="number"
-                min={8}
+                min={4}
                 max={100}
                 value={numCitizens}
                 onChange={(e) => setNumCitizens(parseInt(e.target.value) || 40)}

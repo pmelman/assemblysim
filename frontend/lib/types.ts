@@ -158,12 +158,21 @@ export interface GroupResponse {
   created_at: string;
 }
 
+export interface ProposalScore {
+  title: string;
+  description: string;
+  avg_score: number;
+  num_votes?: number;
+  passed: boolean;
+}
+
 export interface ReportResponse {
   id: number;
   assembly_id: number;
   executive_summary: string | null;
   recommendations: Recommendation[] | null;
-  vote_tally: VoteTally | null;
+  vote_tally: Record<string, number> | null;
+  proposal_scores: ProposalScore[] | null;
   minority_report: string | null;
   key_themes: string[] | null;
   generated_at: string;
@@ -172,7 +181,8 @@ export interface ReportResponse {
 export interface Recommendation {
   title: string;
   description: string;
-  support_level: 'strong' | 'moderate' | 'weak';
+  avg_score?: number;
+  support_level?: 'strong' | 'moderate' | 'weak';
 }
 
 export interface VoteTally {

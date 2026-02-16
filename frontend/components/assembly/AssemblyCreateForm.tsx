@@ -175,12 +175,12 @@ export function AssemblyCreateForm() {
               <Input
                 id="num_citizens"
                 type="number"
-                min={8}
+                min={4}
                 max={100}
                 value={formData.num_citizens}
                 onChange={(e) => setFormData({ ...formData, num_citizens: parseInt(e.target.value) || 40 })}
               />
-              <p className="text-xs text-muted-foreground">8-100 citizens</p>
+              <p className="text-xs text-muted-foreground">4-100 citizens</p>
             </div>
 
             <div className="space-y-2">

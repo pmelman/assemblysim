@@ -4,13 +4,11 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { VoteChart } from './VoteChart';
 import { RecommendationCard } from './RecommendationCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDateTime } from '@/lib/utils';
 import type { ReportResponse } from '@/lib/types';
-import { FileText, Calendar, Tag, Users } from 'lucide-react';
+import { FileText, Calendar } from 'lucide-react';
 
 interface ReportViewerProps {
   report: ReportResponse | null;
@@ -41,6 +39,9 @@ export function ReportViewer({ report, isLoading }: ReportViewerProps) {
     );
   }
 
+  // Build a combined list of all proposals with scores for display
+  const allProposals = report.proposal_scores || [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -53,19 +54,6 @@ export function ReportViewer({ report, isLoading }: ReportViewerProps) {
           <span>Generated {formatDateTime(report.generated_at)}</span>
         </div>
       </div>
-
-      {/* Vote Results */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Vote Results
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <VoteChart voteTally={report.vote_tally} />
-        </CardContent>
-      </Card>
 
       {/* Executive Summary */}
       {report.executive_summary && (
@@ -83,34 +71,42 @@ export function ReportViewer({ report, isLoading }: ReportViewerProps) {
         </Card>
       )}
 
-      {/* Key Themes */}
+      {/* Key Themes (as a subsection within a card) */}
       {report.key_themes && report.key_themes.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Tag className="h-5 w-5" />
-              Key Themes
-            </CardTitle>
+            <CardTitle className="text-lg">Key Themes</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-wrap gap-2">
+            <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
               {report.key_themes.map((theme, index) => (
-                <Badge key={index} variant="secondary" className="text-sm">
-                  {theme}
-                </Badge>
+                <li key={index}>{theme}</li>
               ))}
-            </div>
+            </ul>
           </CardContent>
         </Card>
       )}
 
-      {/* Recommendations */}
-      {report.recommendations && report.recommendations.length > 0 && (
+      {/* Proposal Scores — all proposals, passed and failed */}
+      {allProposals.length > 0 && (
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold">Recommendations</h3>
+          <h3 className="text-lg font-semibold">Proposals &amp; Scores</h3>
           <div className="grid gap-4 md:grid-cols-2">
-            {report.recommendations.map((rec, index) => (
-              <RecommendationCard key={index} recommendation={rec} index={index} />
+            {allProposals.map((proposal, index) => (
+              <RecommendationCard
+                key={index}
+                recommendation={{
+                  title: proposal.title,
+                  description: proposal.description,
+                  avg_score: proposal.avg_score,
+                  support_level: proposal.passed
+                    ? (proposal.avg_score >= 4.0 ? 'strong' : 'moderate')
+                    : 'weak',
+                }}
+                index={index}
+                passed={proposal.passed}
+                avgScore={proposal.avg_score}
+              />
             ))}
           </div>
         </div>

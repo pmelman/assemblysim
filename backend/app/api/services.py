@@ -111,8 +111,10 @@ async def create_assembly_with_citizens(
             generator = PersonaGenerator()
             personas = await generator.generate_batch(sample_df, max_concurrent=3)
 
-        # Prepend custom citizens to the personas list
+        # Combine custom and generated citizens, then shuffle for random group assignment
+        import random
         all_personas = custom_templates + personas
+        random.shuffle(all_personas)
 
         logger.info(f"Total citizens: {len(all_personas)} ({len(custom_templates)} custom + {len(personas)} generated)")
 

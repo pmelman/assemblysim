@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 
 from app.llm_client import get_llm_client
-from app.prompt_loader import get_moderator_prompt
+from app.prompt_loader import get_moderator_prompt, get_moderator_deduplicate_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -436,6 +436,71 @@ Generate a brief closing (2 paragraphs) that:
             return f"""Thank you all for participating in this Citizens' Assembly on {self.topic}.
 
 Your thoughtful engagement with this important issue demonstrates the value of deliberative democracy. Regardless of the vote outcome, the perspectives shared here contribute to our collective understanding."""
+
+    async def deduplicate_proposals(
+        self,
+        proposals: list[dict],
+        topic: str
+    ) -> list[dict]:
+        """
+        Review proposals and merge similar ones.
+
+        Args:
+            proposals: List of proposal dicts with 'title' and 'description'
+            topic: The assembly topic
+
+        Returns:
+            Deduplicated list of proposal dicts
+        """
+        import json
+
+        dedup_instructions = get_moderator_deduplicate_prompt()
+
+        # Format proposals as numbered list
+        proposals_text = "\n".join([
+            f"{i}. {p['title']}: {p['description']}"
+            for i, p in enumerate(proposals)
+        ])
+
+        prompt = f"""Topic: {topic}
+
+PROPOSALS TO REVIEW:
+{proposals_text}
+
+{dedup_instructions}"""
+
+        try:
+            response = await self.llm.complete(
+                prompt=prompt,
+                system_prompt=self.system_prompt,
+                max_tokens=1000
+            )
+
+            # Parse JSON from response
+            response = response.strip()
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0]
+
+            deduplicated = json.loads(response.strip())
+            if isinstance(deduplicated, list):
+                # Validate structure
+                result = []
+                for item in deduplicated:
+                    if isinstance(item, dict) and "title" in item and "description" in item:
+                        result.append({
+                            "title": item["title"],
+                            "description": item["description"],
+                            "source_indices": item.get("source_indices", [])
+                        })
+                return result if result else proposals
+
+            return proposals
+
+        except Exception as e:
+            logger.error(f"Error deduplicating proposals: {e}")
+            return proposals
 
     def __repr__(self):
         return f"<ModeratorAgent(topic='{self.topic[:30]}...')>"

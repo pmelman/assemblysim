@@ -11,7 +11,10 @@ from typing import Optional
 
 from app.llm_client import get_llm_client
 from app.config import get_settings
-from app.prompt_loader import get_citizen_instructions, get_citizen_citation_instructions
+from app.prompt_loader import (
+    get_citizen_instructions, get_citizen_citation_instructions,
+    get_citizen_proposal_instructions, get_citizen_score_vote_instructions
+)
 from app.agents.stubbornness import calculate_stubbornness, get_stubbornness_instruction
 
 logger = logging.getLogger(__name__)
@@ -286,6 +289,114 @@ Base your vote on your authentic values and what you learned during deliberation
                 "reasoning": "Unable to reach a decision at this time.",
                 "confidence": "low"
             }
+
+    async def propose_policies(
+        self,
+        discussion_context: str,
+        group_context: str
+    ) -> str:
+        """
+        Generate 1-2 policy proposals based on the deliberation.
+
+        Args:
+            discussion_context: Full deliberation context
+            group_context: Recent group discussion context
+
+        Returns:
+            Raw response text containing proposals in structured format
+        """
+        instructions = get_citizen_proposal_instructions()
+
+        user_message = f"""DELIBERATION CONTEXT:
+{discussion_context}
+
+RECENT GROUP DISCUSSION:
+{group_context}
+
+{instructions}
+
+Based on your values and what you've learned during this deliberation, propose 1-2 specific policy proposals."""
+
+        try:
+            response = await self.llm.complete(
+                prompt=user_message,
+                system_prompt=self._full_system_prompt,
+                max_tokens=500
+            )
+            return response
+
+        except Exception as e:
+            logger.error(f"Error generating proposals: {e}")
+            return f"PROPOSAL 1: {self.name}'s Recommendation\nBased on the deliberation, I recommend further study and balanced policy action on this topic."
+
+    async def score_vote(
+        self,
+        proposals: list[dict],
+        discussion_summary: str
+    ) -> dict:
+        """
+        Score each proposal on a scale of 1-5.
+
+        Args:
+            proposals: List of proposal dicts with 'title' and 'description'
+            discussion_summary: Summary of the full deliberation
+
+        Returns:
+            Dict mapping proposal index to score (1-5)
+        """
+        instructions = get_citizen_score_vote_instructions()
+
+        # Format proposals
+        proposals_text = "\n".join([
+            f"{i+1}. {p['title']}: {p['description']}"
+            for i, p in enumerate(proposals)
+        ])
+
+        user_message = f"""DELIBERATION SUMMARY:
+{discussion_summary}
+
+PROPOSALS TO SCORE:
+{proposals_text}
+
+{instructions}
+
+Score each proposal based on your values and what you learned during deliberation."""
+
+        try:
+            response = await self.llm.complete(
+                prompt=user_message,
+                system_prompt=self._full_system_prompt,
+                max_tokens=400
+            )
+            return self._parse_score_response(response, len(proposals))
+
+        except Exception as e:
+            logger.error(f"Error scoring proposals: {e}")
+            # Default to neutral scores
+            return {i: 3 for i in range(len(proposals))}
+
+    def _parse_score_response(self, response: str, num_proposals: int) -> dict:
+        """Parse score voting response into {index: score} dict."""
+        import re
+        scores = {}
+
+        # Look for patterns like "1. title: 4" or "1. 4" or "title: 4/5"
+        lines = response.split("\n")
+        for line in lines:
+            # Match numbered lines with scores
+            match = re.match(r'\s*(\d+)\.\s*.*?:\s*(\d)', line)
+            if match:
+                idx = int(match.group(1)) - 1  # Convert to 0-indexed
+                score = int(match.group(2))
+                if 0 <= idx < num_proposals and 1 <= score <= 5:
+                    scores[idx] = score
+
+        # Fill in missing scores with neutral (3)
+        for i in range(num_proposals):
+            if i not in scores:
+                scores[i] = 3
+
+        return scores
 
     def _parse_vote_response(self, response: str) -> dict:
         """Parse the vote response into structured format."""

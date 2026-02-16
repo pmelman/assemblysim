@@ -128,6 +128,20 @@ await broadcast_to_assembly(assembly_id, {"type": "status_update", ...})
 
 `PENDING` → `GENERATING_CITIZENS` → `CITIZENS_READY` → `GENERATING_BRIEFING` → `READY` → `DELIBERATING` → `VOTING` → `COMPLETED`
 
+### Deliberation Flow
+
+After citizens and briefing are ready, the deliberation engine runs:
+
+1. **Group Rounds** — Citizens discuss the topic in small groups across multiple rounds
+2. **Plenary Round** — Cross-group discussion with all citizens
+3. **Proposal Generation** — Each citizen in each group proposes 1-2 policy ideas
+4. **Intra-Group Score Voting** — Citizens score all group proposals (1-5), top 2 per group advance
+5. **Moderator Deduplication** — Moderator LLM merges similar proposals across groups
+6. **Assembly-Wide Score Voting** — Every citizen scores each deduplicated proposal (1-5), proposals averaging >3 pass
+7. **Report Generation** — Passing proposals become recommendations; recorder agent generates executive summary, themes, consensus/disagreement summaries, minority report
+
+Key files: `orchestration/deliberation_engine.py` (flow), `agents/citizen_agent.py` (propose_policies, score_vote), `agents/moderator_agent.py` (deduplicate_proposals), `agents/recorder_agent.py` (report generation)
+
 ## Important Gotchas
 
 1. **`.env` location**: `assemblysim/.env`, NOT `assemblysim/backend/.env`
@@ -138,3 +152,4 @@ await broadcast_to_assembly(assembly_id, {"type": "status_update", ...})
 6. **Prompt caching**: `@lru_cache()` — restart app to reload prompts
 7. **Background tasks**: Use `get_db_session()`, not `get_db()`
 8. **GSS NaN values**: Always check `pd.notna()` before casting GSS data
+9. **Update DB**: Don't forget to update the DB when you make updates that add new columns

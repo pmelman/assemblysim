@@ -142,3 +142,28 @@ def get_perplexity_prompt() -> str:
 def get_perplexity_research_query_prompt() -> str:
     """Get the Perplexity follow-up research query prompt."""
     return get_prompt("perplexity", "research_query")
+
+
+def get_citizen_proposal_instructions() -> str:
+    """Get the citizen proposal generation instructions."""
+    return get_prompt("citizen", "proposal_instructions")
+
+
+def get_citizen_score_vote_instructions() -> str:
+    """Get the citizen score voting instructions."""
+    return get_prompt("citizen", "score_vote_instructions")
+
+
+def get_moderator_proposal_prompt() -> str:
+    """Get the moderator proposal generation opening prompt."""
+    return get_prompt("moderator", "prompt_proposals")
+
+
+def get_moderator_deduplicate_prompt() -> str:
+    """Get the moderator deduplication instructions."""
+    return get_prompt("moderator", "deduplicate_proposals")
+
+
+def get_moderator_score_voting_transition() -> str:
+    """Get the moderator score voting transition statement."""
+    return get_prompt("moderator", "transition_to_score_voting")

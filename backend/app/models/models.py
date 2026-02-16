@@ -299,6 +299,14 @@ class Report(Base):
     #     "total": 40
     # }
 
+    # Proposal scores (all proposals with avg scores and pass/fail)
+    proposal_scores = Column(JSON, nullable=True)
+    # Expected structure:
+    # [
+    #     {"title": "...", "description": "...", "avg_score": 3.8, "num_votes": 40, "passed": true},
+    #     ...
+    # ]
+
     # Analysis
     minority_report = Column(Text, nullable=True)
     key_themes = Column(JSON, nullable=True)  # List of theme strings

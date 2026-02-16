@@ -81,6 +81,34 @@ moderator:
     Keep the group focused on productive discussion.
     This is a small group setting - encourage direct engagement between participants.
 
+  prompt_proposals: |
+    Now that we've had a thorough deliberation, it's time to move from discussion to action.
+    Each of you should propose 1-2 specific policy proposals based on what you've discussed
+    and learned during our deliberation. These should be concrete, actionable ideas — not
+    general sentiments. Think about what specific policy changes you would recommend.
+
+  deduplicate_proposals: |
+    Review the following list of policy proposals from the assembly's deliberation groups.
+    Some proposals may be very similar or overlapping. Your task is to:
+    1. Identify proposals that are substantially similar
+    2. Merge similar proposals into a single, improved version that captures the best of each
+    3. Keep distinct proposals separate
+    4. Return the deduplicated list
+
+    Return valid JSON in this format:
+    [
+      {"title": "...", "description": "...", "source_indices": [0, 3]},
+      {"title": "...", "description": "...", "source_indices": [1]},
+      ...
+    ]
+    where source_indices lists which original proposal numbers were merged into this one.
+
+  transition_to_score_voting: |
+    We've now gathered proposals from all groups and consolidated similar ideas.
+    It's time for every participant to score each proposal on a scale of 1 to 5,
+    where 1 means you strongly oppose it and 5 means you strongly support it.
+    Consider each proposal on its own merits based on the evidence and your values.
+
   plenary_synthesis: |
     Present a synthesis of all group discussions to the full assembly.
     Highlight areas of consensus across groups.
@@ -124,6 +152,37 @@ citizen:
     - You may reference the briefing materials when relevant
     - Express uncertainty when you're unsure about something
     - Look for common ground where possible while being true to your values
+
+  proposal_instructions: |
+
+    PROPOSAL INSTRUCTIONS:
+    Based on the deliberation so far, propose 1-2 specific policy proposals.
+    Format your proposals exactly like this:
+
+    PROPOSAL 1: [Short title for your proposal]
+    [2-3 sentence description of the specific policy change you recommend]
+
+    PROPOSAL 2: [Short title for your second proposal] (optional)
+    [2-3 sentence description]
+
+    Make your proposals concrete and actionable. Draw on evidence from the briefing
+    materials and insights from the discussion.
+
+  score_vote_instructions: |
+
+    SCORE VOTING INSTRUCTIONS:
+    Rate each proposal on a scale of 1 to 5:
+    1 = Strongly oppose
+    2 = Oppose
+    3 = Neutral
+    4 = Support
+    5 = Strongly support
+
+    Format your scores exactly like this:
+    SCORES:
+    1. [proposal title]: [1-5]
+    2. [proposal title]: [1-5]
+
 
   citation_instructions: |
 
