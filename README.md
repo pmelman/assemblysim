@@ -124,6 +124,18 @@ assemblysim/
     └── GSS_stata/                     # GSS survey data
 ```
 
+## Deliberation Flow
+
+After citizens are generated and a briefing book is researched, the deliberation engine runs this sequence:
+
+1. **Group Discussion Rounds** — Citizens discuss the topic in small deliberation groups across multiple rounds, with a moderator facilitating
+2. **Plenary Round** — Cross-group discussion bringing all citizens together
+3. **Proposal Generation** — Each citizen proposes 1-2 concrete policy ideas within their group
+4. **Intra-Group Score Voting** — Citizens score all proposals in their group (1-5). Top 2 per group advance
+5. **Moderator Deduplication** — The moderator reviews all advancing proposals and merges similar ones
+6. **Assembly-Wide Score Voting** — Every citizen scores each deduplicated proposal (1-5). Proposals averaging >3.0 pass
+7. **Report Generation** — Passing proposals become the assembly's recommendations. A recorder agent generates an executive summary, key themes, consensus/disagreement analysis, and a minority report
+
 ## API Endpoints
 
 ### Authentication (unauthenticated)
