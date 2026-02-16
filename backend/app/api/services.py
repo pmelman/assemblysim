@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.models.database import get_db_session
 from app.models.models import (
-    Assembly, Citizen, DeliberationGroup, BriefingBook, AssemblyStatus
+    Assembly, Citizen, DeliberationGroup, BriefingBook, AssemblyStatus,
+    CustomCitizenTemplate
 )
 from app.citizen_forge.sampler import StratifiedSampler
 from app.citizen_forge.persona_generator import PersonaGenerator
@@ -28,7 +29,8 @@ async def create_assembly_with_citizens(
     num_citizens: int,
     num_groups: int,
     sampling_strategy: str = "stratified",
-    broadcast_callback=None
+    broadcast_callback=None,
+    custom_citizen_ids: Optional[list] = None
 ):
     """
     Background task to generate citizens for an assembly.
@@ -60,26 +62,59 @@ async def create_assembly_with_citizens(
                     "message": "Starting citizen generation..."
                 })
 
-        # Sample from GSS data
-        logger.info(f"Sampling {num_citizens} citizens using {sampling_strategy} strategy")
-        sampler = StratifiedSampler(target_n=num_citizens)
-        sampler.load_data(years=[2022])
-        sample_df = sampler.sample(strategy=sampling_strategy)
+        # Load custom citizen templates if provided
+        custom_templates = []
+        if custom_citizen_ids:
+            with get_db_session() as db:
+                custom_templates = db.query(CustomCitizenTemplate).filter(
+                    CustomCitizenTemplate.id.in_(custom_citizen_ids)
+                ).all()
+                # Detach from session so we can use them later
+                custom_templates = [{
+                    "name": t.name,
+                    "system_prompt": t.system_prompt or "",
+                    "background_summary": t.background_summary,
+                    "key_values": t.key_values or [],
+                    "demographic_tags": t.demographic_tags or [],
+                } for t in custom_templates]
 
-        logger.info(f"Sampled {len(sample_df)} rows from GSS data")
+            logger.info(f"Loaded {len(custom_templates)} custom citizen templates")
 
-        if broadcast_callback:
-            await broadcast_callback(assembly_id, {
-                "type": "status_update",
-                "status": "generating_citizens",
-                "message": f"Sampled {len(sample_df)} respondents, generating personas..."
-            })
+            if broadcast_callback:
+                await broadcast_callback(assembly_id, {
+                    "type": "status_update",
+                    "status": "generating_citizens",
+                    "message": f"Loaded {len(custom_templates)} custom citizens, sampling remaining..."
+                })
 
-        # Generate personas
-        generator = PersonaGenerator()
-        personas = await generator.generate_batch(sample_df, max_concurrent=3)
+        # Calculate how many GSS citizens to generate
+        gss_count = num_citizens - len(custom_templates)
 
-        logger.info(f"Generated {len(personas)} personas")
+        personas = []
+        if gss_count > 0:
+            # Sample from GSS data
+            logger.info(f"Sampling {gss_count} citizens using {sampling_strategy} strategy")
+            sampler = StratifiedSampler(target_n=gss_count)
+            sampler.load_data(years=[2022])
+            sample_df = sampler.sample(strategy=sampling_strategy)
+
+            logger.info(f"Sampled {len(sample_df)} rows from GSS data")
+
+            if broadcast_callback:
+                await broadcast_callback(assembly_id, {
+                    "type": "status_update",
+                    "status": "generating_citizens",
+                    "message": f"Sampled {len(sample_df)} respondents, generating personas..."
+                })
+
+            # Generate personas
+            generator = PersonaGenerator()
+            personas = await generator.generate_batch(sample_df, max_concurrent=3)
+
+        # Prepend custom citizens to the personas list
+        all_personas = custom_templates + personas
+
+        logger.info(f"Total citizens: {len(all_personas)} ({len(custom_templates)} custom + {len(personas)} generated)")
 
         # Save to database
         with get_db_session() as db:
@@ -101,8 +136,8 @@ async def create_assembly_with_citizens(
             db.flush()  # Get group IDs
 
             # Create citizens and assign to groups
-            citizens_per_group = len(personas) // num_groups
-            for i, persona in enumerate(personas):
+            citizens_per_group = len(all_personas) // num_groups
+            for i, persona in enumerate(all_personas):
                 group_index = min(i // citizens_per_group, num_groups - 1)
                 group = groups[group_index]
 
@@ -127,23 +162,23 @@ async def create_assembly_with_citizens(
 
             if briefing_exists:
                 assembly.status = AssemblyStatus.READY
-                status_message = f"Generated {len(personas)} citizens in {num_groups} groups, assembly ready for deliberation"
+                status_message = f"Generated {len(all_personas)} citizens in {num_groups} groups, assembly ready for deliberation"
             else:
                 assembly.status = AssemblyStatus.CITIZENS_READY
-                status_message = f"Generated {len(personas)} citizens in {num_groups} groups"
+                status_message = f"Generated {len(all_personas)} citizens in {num_groups} groups"
 
-            assembly.num_citizens = len(personas)
+            assembly.num_citizens = len(all_personas)
             assembly.num_groups = num_groups
             db.commit()
 
-            logger.info(f"Saved {len(personas)} citizens and {num_groups} groups for assembly {assembly_id}")
+            logger.info(f"Saved {len(all_personas)} citizens and {num_groups} groups for assembly {assembly_id}")
 
             if broadcast_callback:
                 await broadcast_callback(assembly_id, {
                     "type": "status_update",
                     "status": assembly.status.value,
                     "message": status_message,
-                    "num_citizens": len(personas),
+                    "num_citizens": len(all_personas),
                     "num_groups": num_groups
                 })
 

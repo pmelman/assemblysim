@@ -13,80 +13,22 @@ The Silicon Citizens' Assembly creates AI personas based on real American survey
 
 The goal: Explore what happens when diverse perspectives engage in good-faith deliberation, free from the constraints of human time, attention, and social pressure.
 
-## Project Status
 
-**Phase 1: The Citizen Forge** ✅ **COMPLETE**
+### Start the Server
 
-The core persona generation pipeline is fully functional:
-
-- ✅ Stratified sampling from GSS 2022 data
-- ✅ LLM-powered persona generation via OpenRouter
-- ✅ Anti-stereotype validation
-- ✅ Bot-themed naming system
-- ✅ Quality metrics and diversity checks
-
-**Phase 2: Core Backend Infrastructure** ✅ **COMPLETE**
-
-Full FastAPI backend with deliberation engine:
-
-- ✅ SQLite database with SQLAlchemy models
-- ✅ REST API for assembly management
-- ✅ WebSocket for real-time updates
-- ✅ Perplexity-powered briefing books
-- ✅ Multi-agent deliberation orchestration
-- ✅ Automated voting and report generation
-- ✅ Configurable prompts system (YAML)
-- ✅ Per-round deliberation prompts (custom themes/instructions)
-- ✅ Automatic follow-up research between rounds
-- ✅ Settings page for persistent assembly defaults
-
-**Next Phase:** Phase 3 - Advanced orchestration and frontend
-
-## Quick Start
-
-### Run a Complete Deliberation (10 minutes)
-
-```bash
-# 1. Install dependencies
-cd backend
-pip install -r requirements.txt
-
-# 2. Set up API keys
-cd ..
-cp .env.example .env
-# Edit .env and add:
-#   OPENROUTER_API_KEY
-#   PERPLEXITY_API_KEY (optional)
-
-# 3. Run the demo
-cd backend
-python demo_deliberation.py --mode quick
-```
-
-This will:
-1. Generate 6 citizens from GSS data
-2. Run a 2-round deliberation on Universal Basic Income
-3. Collect votes with reasoning
-4. Generate a final report with themes and analysis
-
-### Or Start the API Server
-
+Backend:
 ```bash
 cd backend
 uvicorn app.main:app --reload
 ```
-
-Then visit http://localhost:8000/docs for interactive API documentation.
-
-**Create an assembly:**
+Frontend:
 ```bash
-curl -X POST http://localhost:8000/assemblies \
-  -H "Content-Type: application/json" \
-  -d '{
-    "topic": "Should the United States implement a Universal Basic Income?",
-    "num_citizens": 8
-  }'
+cd frontend
+npm run dev
 ```
+
+Then visit http://localhost:3000
+
 
 ## Bot-Themed Names 🤖
 
@@ -338,44 +280,6 @@ Python packages (see `requirements.txt`):
 - PyYAML - Prompt configuration
 - httpx - Async HTTP for LLM APIs
 
-## Development Roadmap
-
-### ✅ Phase 0: Foundation (Complete)
-- Project structure
-- Configuration system
-- GSS data loading pipeline
-
-### ✅ Phase 1: The Citizen Forge (Complete)
-- Stratified sampling
-- LLM persona generation
-- Bot-themed naming
-- Validation system
-
-### ✅ Phase 2: Core Backend (Complete)
-- FastAPI application with REST API
-- SQLite database with SQLAlchemy
-- WebSocket for real-time updates
-- Perplexity integration for research
-- Multi-agent deliberation engine
-- YAML-based prompt configuration
-
-### 📋 Phase 3: Advanced Features (Next)
-- LangGraph integration (optional)
-- Small group deliberation (currently all together)
-- Enhanced fact-checking
-- Multiple deliberation strategies
-
-### 📋 Phase 4: Frontend
-- Next.js application
-- Assembly creation UI
-- Real-time deliberation viewer
-- Report generation and display
-
-### 📋 Phase 5: Integration & Polish
-- End-to-end testing
-- Performance optimization
-- Deployment setup
-- Documentation
 
 ## Resources
 

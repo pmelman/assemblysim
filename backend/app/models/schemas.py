@@ -31,6 +31,7 @@ class AssemblyCreateRequest(BaseModel):
     round_prompts: Optional[list[RoundPromptConfig]] = Field(default=None, description="Per-round themes and prompts")
     max_research_calls_per_round: int = Field(default=2, ge=0, le=10, description="Max Perplexity research calls between rounds")
     max_research_tokens_per_call: int = Field(default=2000, ge=500, le=8000, description="Max tokens per research call")
+    custom_citizen_ids: Optional[list[int]] = Field(default=None, description="IDs of custom citizen templates to include")
 
     class Config:
         json_schema_extra = {
@@ -286,3 +287,46 @@ class AppSettingsUpdateRequest(BaseModel):
     default_round_prompts: Optional[list[RoundPromptConfig]] = None
     default_max_research_calls_per_round: Optional[int] = Field(default=None, ge=0, le=10)
     default_max_research_tokens_per_call: Optional[int] = Field(default=None, ge=500, le=8000)
+
+
+# =============================================================================
+# CUSTOM CITIZEN SCHEMAS
+# =============================================================================
+
+class CustomCitizenCreateRequest(BaseModel):
+    """Request body for creating a custom citizen template."""
+    name: str = Field(..., min_length=1, max_length=100, description="Citizen name")
+    mode: str = Field(default="traits", description="Creation mode: 'traits' or 'full'")
+    background_summary: Optional[str] = Field(default=None, description="Brief background/bio")
+    key_values: Optional[list[str]] = Field(default=None, description="Core values")
+    demographic_tags: Optional[list[str]] = Field(default=None, description="Demographic tags")
+    political_leaning: Optional[str] = Field(default=None, description="Political leaning (e.g. liberal, moderate, conservative)")
+    system_prompt: Optional[str] = Field(default=None, description="Full persona system prompt (required for 'full' mode)")
+
+
+class CustomCitizenUpdateRequest(BaseModel):
+    """Request body for updating a custom citizen template. All fields optional."""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    mode: Optional[str] = None
+    background_summary: Optional[str] = None
+    key_values: Optional[list[str]] = None
+    demographic_tags: Optional[list[str]] = None
+    political_leaning: Optional[str] = None
+    system_prompt: Optional[str] = None
+
+
+class CustomCitizenTemplateResponse(BaseModel):
+    """Response model for a custom citizen template."""
+    id: int
+    name: str
+    mode: str
+    background_summary: Optional[str] = None
+    key_values: Optional[list[str]] = None
+    demographic_tags: Optional[list[str]] = None
+    political_leaning: Optional[str] = None
+    system_prompt: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -42,6 +42,7 @@ export interface AssemblyCreateRequest {
   round_prompts?: RoundPromptConfig[] | null;
   max_research_calls_per_round?: number;
   max_research_tokens_per_call?: number;
+  custom_citizen_ids?: number[] | null;
 }
 
 export interface BriefingGenerateRequest {
@@ -261,6 +262,43 @@ export interface ErrorResponse {
   error: string;
   detail?: string;
   status_code: number;
+}
+
+// =============================================================================
+// CUSTOM CITIZEN TYPES
+// =============================================================================
+
+export interface CustomCitizenTemplate {
+  id: number;
+  name: string;
+  mode: 'traits' | 'full';
+  background_summary: string | null;
+  key_values: string[] | null;
+  demographic_tags: string[] | null;
+  political_leaning: string | null;
+  system_prompt: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomCitizenCreateRequest {
+  name: string;
+  mode: 'traits' | 'full';
+  background_summary?: string | null;
+  key_values?: string[] | null;
+  demographic_tags?: string[] | null;
+  political_leaning?: string | null;
+  system_prompt?: string | null;
+}
+
+export interface CustomCitizenUpdateRequest {
+  name?: string;
+  mode?: 'traits' | 'full';
+  background_summary?: string | null;
+  key_values?: string[] | null;
+  demographic_tags?: string[] | null;
+  political_leaning?: string | null;
+  system_prompt?: string | null;
 }
 
 // Helper type for status badge styling

@@ -192,3 +192,10 @@ perplexity:
         ],
         "key_uncertainties": ["What we don't know yet or where data is missing"]
     }
+
+  research_query: |
+    You are an expert investigative researcher. Perform a thorough, multi-step 
+    analysis of the topic. If direct data is unavailable, search for proxy metrics,
+    historical parallels, and academic studies. Do not summarize—synthesize. 
+    Your output should be a comprehensive research report with distinct sections,
+    data tables where applicable, and high-density information. cite every claim.

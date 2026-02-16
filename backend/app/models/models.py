@@ -56,6 +56,9 @@ class Assembly(Base):
     max_research_calls_per_round = Column(Integer, default=2, nullable=False)
     max_research_tokens_per_call = Column(Integer, default=2000, nullable=False)
 
+    # Custom citizens (list of CustomCitizenTemplate IDs to include)
+    custom_citizen_ids = Column(JSON, nullable=True)
+
     # Error tracking
     error_message = Column(Text, nullable=True)
 
@@ -295,6 +298,37 @@ class RoundResearch(Base):
 
     def __repr__(self):
         return f"<RoundResearch(id={self.id}, assembly_id={self.assembly_id}, round={self.round_number})>"
+
+
+class CustomCitizenTemplate(Base):
+    """
+    A reusable custom citizen template.
+
+    Saved independently of assemblies and can be selected when creating
+    a new assembly to pre-seed specific citizens before GSS generation
+    fills the remaining slots.
+    """
+    __tablename__ = "custom_citizen_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    mode = Column(String(20), nullable=False, default="traits")  # "traits" or "full"
+
+    # Traits (used in "traits" mode, optional in "full" mode)
+    background_summary = Column(Text, nullable=True)
+    key_values = Column(JSON, nullable=True)  # List of value strings
+    demographic_tags = Column(JSON, nullable=True)  # List of tag strings
+    political_leaning = Column(String(50), nullable=True)  # e.g. "liberal", "moderate", "conservative"
+
+    # Generated or user-provided persona
+    system_prompt = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<CustomCitizenTemplate(id={self.id}, name='{self.name}', mode='{self.mode}')>"
 
 
 class AppSettings(Base):

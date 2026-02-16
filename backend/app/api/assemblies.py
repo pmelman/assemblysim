@@ -63,6 +63,7 @@ async def create_assembly(
         round_prompts=round_prompts_data,
         max_research_calls_per_round=request.max_research_calls_per_round,
         max_research_tokens_per_call=request.max_research_tokens_per_call,
+        custom_citizen_ids=request.custom_citizen_ids,
         status=AssemblyStatus.PENDING
     )
     db.add(assembly)
@@ -295,13 +296,17 @@ async def generate_citizens(
             detail=f"Citizens already exist ({existing_count} found)"
         )
 
+    # Check if assembly has custom citizen IDs stored
+    custom_citizen_ids = assembly.custom_citizen_ids
+
     # Start background citizen generation
     background_tasks.add_task(
         create_assembly_with_citizens,
         assembly.id,
         assembly.num_citizens,
         assembly.num_groups,
-        assembly.sampling_strategy
+        assembly.sampling_strategy,
+        custom_citizen_ids=custom_citizen_ids
     )
 
     return {

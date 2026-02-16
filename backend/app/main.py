@@ -16,6 +16,7 @@ from app.models.database import init_db
 from app.api.assemblies import router as assemblies_router
 from app.api.websocket import router as websocket_router
 from app.api.settings import router as settings_router
+from app.api.custom_citizens import router as custom_citizens_router
 from app.models.schemas import HealthResponse
 
 # Configure logging
@@ -110,6 +111,7 @@ def health_check():
 app.include_router(assemblies_router)
 app.include_router(websocket_router)
 app.include_router(settings_router)
+app.include_router(custom_citizens_router)
 
 
 # =============================================================================

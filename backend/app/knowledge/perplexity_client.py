@@ -8,11 +8,12 @@ Perplexity's search-augmented AI for accurate, sourced information.
 import httpx
 import json
 import logging
+import re
 from typing import Optional
 from datetime import datetime
 
 from app.config import get_settings
-from app.prompt_loader import get_perplexity_prompt
+from app.prompt_loader import get_perplexity_prompt, get_perplexity_research_query_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -99,12 +100,12 @@ Format your response as the JSON structure specified in your instructions."""
             logger.error(f"Perplexity API error: {e}")
             return self._generate_fallback_briefing(topic)
 
-    async def _call_api(self, prompt: str, max_tokens: int = 4000, system_prompt: Optional[str] = None) -> dict:
+    async def _call_api(self, prompt: str, max_tokens: Optional[int] = None, system_prompt: Optional[str] = None) -> dict:
         """Make the API call to Perplexity.
 
         Args:
             prompt: The user prompt to send
-            max_tokens: Maximum tokens in response (default 4000)
+            max_tokens: Maximum tokens in response (uses config default if not specified)
             system_prompt: Optional override for system prompt
         """
         logger.debug("=" * 80)
@@ -115,42 +116,103 @@ Format your response as the JSON structure specified in your instructions."""
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Origin": "https://www.perplexity.ai",
+            "Referer": "https://www.perplexity.ai/"
         }
 
+        # Use config defaults if not specified
+        if max_tokens is None:
+            max_tokens = self.settings.PERPLEXITY_BRIEFING_MAX_TOKENS
+
         payload = {
-            "model": "sonar-pro",  # Updated to current Perplexity model
+            "model": self.settings.PERPLEXITY_MODEL,
             "messages": [
                 {"role": "system", "content": system_prompt or self.system_prompt},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.3,
+            "temperature": self.settings.PERPLEXITY_TEMPERATURE,
             "max_tokens": max_tokens,
-            "return_citations": True
+            "return_citations": True,
+            "stream": True,
+            "reasoning_effort": self.settings.PERPLEXITY_REASONING_EFFORT,
+            "web_search_options": {
+                "search_context_size": self.settings.PERPLEXITY_SEARCH_CONTEXT_SIZE
+            }
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
+        async with httpx.AsyncClient(timeout=float(self.settings.PERPLEXITY_TIMEOUT)) as client:
+            # Use streaming — sonar-deep-research returns empty content without it
+            full_content = ""
+            citations = []
+            search_results = []
+            last_chunk = {}
+
+            async with client.stream(
+                "POST",
                 f"{self.base_url}/chat/completions",
                 headers=headers,
                 json=payload
-            )
+            ) as response:
+                if response.status_code != 200:
+                    body = await response.aread()
+                    logger.error(f"Perplexity API error: {response.status_code} - {body.decode()}")
+                    response.raise_for_status()
 
-            if response.status_code != 200:
-                logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
-                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        last_chunk = chunk
+                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        content = delta.get("content", "")
+                        if content:
+                            full_content += content
+                        # Capture citations/search_results from final chunks
+                        if "citations" in chunk:
+                            citations = chunk["citations"]
+                        if "search_results" in chunk:
+                            search_results = chunk["search_results"]
+                    except json.JSONDecodeError:
+                        continue
 
-            result = response.json()
+            # Strip <think>...</think> reasoning blocks from deep-research models
+            full_content = re.sub(r"<think>.*?</think>\s*", "", full_content, flags=re.DOTALL)
+            # Handle truncated thinking (no closing tag)
+            if "<think>" in full_content:
+                full_content = full_content.split("<think>")[0].strip()
+
+            # Build a response dict matching the non-streaming format
+            result = {
+                "id": last_chunk.get("id", ""),
+                "model": last_chunk.get("model", self.settings.PERPLEXITY_MODEL),
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": full_content
+                        }
+                    }
+                ],
+                "citations": citations,
+                "search_results": search_results,
+                "usage": last_chunk.get("usage", {})
+            }
 
             # Log response
-            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            logger.debug(f"RESPONSE: {content[:1000]}..." if len(content) > 1000 else f"RESPONSE: {content}")
+            logger.debug(f"RESPONSE: {full_content[:1000]}..." if len(full_content) > 1000 else f"RESPONSE: {full_content}")
 
-            citations = result.get("citations", [])
             if citations:
                 logger.debug(f"CITATIONS: {len(citations)} sources")
-                for i, cite in enumerate(citations[:3], 1):  # Show first 3
-                    # Handle both string URLs and dict citations
+                for i, cite in enumerate(citations[:3], 1):
                     if isinstance(cite, str):
                         logger.debug(f"  {i}. {cite}")
                     elif isinstance(cite, dict):
@@ -161,6 +223,96 @@ Format your response as the JSON structure specified in your instructions."""
 
             return result
 
+    def _extract_json(self, content: str) -> dict:
+        """Extract a JSON object from content that may contain surrounding text.
+
+        Handles code fences, surrounding text, and truncated JSON
+        (common with deep-research models that exceed the token limit).
+        """
+        # Strip code fences first
+        raw = content
+        if "```json" in raw:
+            raw = raw.split("```json", 1)[1]
+            if "```" in raw:
+                raw = raw.split("```", 1)[0]
+        elif "```" in raw:
+            raw = raw.split("```", 1)[1]
+            if "```" in raw:
+                raw = raw.split("```", 1)[0]
+
+        # Trim to the JSON object boundaries
+        start = raw.find("{")
+        if start != -1:
+            raw = raw[start:]
+
+        # Try parsing as-is
+        try:
+            return json.loads(raw.strip())
+        except json.JSONDecodeError:
+            pass
+
+        # Repair truncated JSON: close unclosed brackets/braces
+        repaired = self._repair_truncated_json(raw)
+        if repaired:
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+
+        raise ValueError("No valid JSON object found in content")
+
+    def _repair_truncated_json(self, text: str) -> Optional[str]:
+        """Attempt to repair JSON truncated by a token limit.
+
+        Truncates at the last complete value, then closes any
+        open brackets/braces.
+        """
+        # Trim trailing incomplete value — cut back to last comma, ], or }
+        trimmed = text.rstrip()
+        # Remove trailing partial string or number
+        for end_char in (",", "}", "]", '"'):
+            pos = trimmed.rfind(end_char)
+            if pos != -1:
+                trimmed = trimmed[:pos + 1]
+                break
+        else:
+            return None
+
+        # Remove any trailing comma before we close structures
+        trimmed = trimmed.rstrip().rstrip(",")
+
+        # Count unclosed openers
+        stack = []
+        in_string = False
+        escape = False
+        for ch in trimmed:
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch in ("{", "["):
+                stack.append(ch)
+            elif ch == "}":
+                if stack and stack[-1] == "{":
+                    stack.pop()
+            elif ch == "]":
+                if stack and stack[-1] == "[":
+                    stack.pop()
+
+        # Close in reverse order
+        closers = {"[": "]", "{": "}"}
+        for opener in reversed(stack):
+            trimmed += closers[opener]
+
+        return trimmed
+
     def _parse_response(self, response: dict, topic: str) -> dict:
         """Parse the Perplexity API response into structured format."""
         try:
@@ -169,13 +321,7 @@ Format your response as the JSON structure specified in your instructions."""
             # Log raw content for debugging
             logger.debug(f"Raw Perplexity content (first 500 chars): {content[:500]}")
 
-            # Extract JSON from response
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
-
-            sections = json.loads(content.strip())
+            sections = self._extract_json(content)
 
             # Validate that sections is a dict
             if not isinstance(sections, dict):
@@ -315,7 +461,7 @@ Format your response as the JSON structure specified in your instructions."""
 
         return md
 
-    async def research_query(self, query: str, max_tokens: int = 2000) -> dict:
+    async def research_query(self, query: str, max_tokens: Optional[int] = None) -> dict:
         """
         Perform a focused follow-up research query.
 
@@ -324,7 +470,7 @@ Format your response as the JSON structure specified in your instructions."""
 
         Args:
             query: The specific research question to answer
-            max_tokens: Maximum tokens for the response
+            max_tokens: Maximum tokens for the response (uses config default if not specified)
 
         Returns:
             Dict with query, content, and sources
@@ -337,11 +483,12 @@ Format your response as the JSON structure specified in your instructions."""
                 "sources": []
             }
 
-        system_prompt = (
-            "You are a research assistant. Answer the following question with accurate, "
-            "well-sourced information. Be concise and factual. Include specific data, "
-            "statistics, and expert opinions where available. Cite your sources."
-        )
+        # Use config default if not specified
+        if max_tokens is None:
+            max_tokens = self.settings.PERPLEXITY_RESEARCH_MAX_TOKENS
+
+        # Load system prompt from prompts.yaml
+        system_prompt = get_perplexity_research_query_prompt()
 
         try:
             response = await self._call_api(

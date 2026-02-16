@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     DEFAULT_NUM_GROUPS: int = 5
     DEFAULT_NUM_ROUNDS: int = 3
 
+    # Perplexity Configuration
+    PERPLEXITY_MODEL: str = "sonar-deep-research"
+    PERPLEXITY_TEMPERATURE: float = 0.3
+    PERPLEXITY_BRIEFING_MAX_TOKENS: int = 4000
+    PERPLEXITY_RESEARCH_MAX_TOKENS: int = 4000
+    PERPLEXITY_TIMEOUT: int = 600  # seconds; deep-research can take several minutes
+    PERPLEXITY_REASONING_EFFORT: str = "high"  # low/medium/high
+    PERPLEXITY_SEARCH_CONTEXT_SIZE: str = "high"  # low/medium/high
+
     # Follow-up Research Defaults
     DEFAULT_MAX_RESEARCH_CALLS_PER_ROUND: int = 2
     DEFAULT_MAX_RESEARCH_TOKENS_PER_CALL: int = 2000

@@ -8,9 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { createAssembly, getAppSettings } from '@/lib/api';
-import type { AssemblyCreateRequest, RoundPromptConfig } from '@/lib/types';
-import { Loader2, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { createAssembly, getAppSettings, listCustomCitizens } from '@/lib/api';
+import type { AssemblyCreateRequest, RoundPromptConfig, CustomCitizenTemplate } from '@/lib/types';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, User } from 'lucide-react';
 
 const DEFAULT_ROUND_PROMPTS: RoundPromptConfig[] = [
   {
@@ -46,8 +47,11 @@ export function AssemblyCreateForm() {
   const [roundPrompts, setRoundPrompts] = useState<RoundPromptConfig[]>(DEFAULT_ROUND_PROMPTS);
   const [showRoundPrompts, setShowRoundPrompts] = useState(false);
   const [showResearchSettings, setShowResearchSettings] = useState(false);
+  const [showCustomCitizens, setShowCustomCitizens] = useState(false);
+  const [customCitizens, setCustomCitizens] = useState<CustomCitizenTemplate[]>([]);
+  const [selectedCustomIds, setSelectedCustomIds] = useState<Set<number>>(new Set());
 
-  // Fetch defaults from settings on mount
+  // Fetch defaults from settings and custom citizens on mount
   useEffect(() => {
     getAppSettings()
       .then((settings) => {
@@ -68,6 +72,12 @@ export function AssemblyCreateForm() {
       .catch(() => {
         // Settings API not available, use hardcoded defaults
         setSettingsLoaded(true);
+      });
+
+    listCustomCitizens()
+      .then(setCustomCitizens)
+      .catch(() => {
+        // Custom citizens API not available
       });
   }, []);
 
@@ -97,9 +107,11 @@ export function AssemblyCreateForm() {
     try {
       // Include round prompts if any have content
       const hasRoundPrompts = roundPrompts.some((rp) => rp.theme || rp.prompt);
+      const customIds = Array.from(selectedCustomIds);
       const submitData: AssemblyCreateRequest = {
         ...formData,
         round_prompts: hasRoundPrompts ? roundPrompts.slice(0, numRounds) : null,
+        custom_citizen_ids: customIds.length > 0 ? customIds : null,
       };
 
       const assembly = await createAssembly(submitData);
@@ -279,6 +291,108 @@ export function AssemblyCreateForm() {
                   <Plus className="h-3.5 w-3.5 mr-1" />
                   Add Round Prompt
                 </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Collapsible Custom Citizens Section */}
+          <div className="border rounded-lg">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+              onClick={() => setShowCustomCitizens(!showCustomCitizens)}
+            >
+              <div>
+                <span className="font-medium">Custom Citizens</span>
+                <span className="text-xs text-muted-foreground ml-2">
+                  {selectedCustomIds.size > 0
+                    ? `${selectedCustomIds.size} selected of ${formData.num_citizens} total`
+                    : 'Pre-seed with custom personas'}
+                </span>
+              </div>
+              {showCustomCitizens ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+
+            {showCustomCitizens && (
+              <div className="px-4 pb-4 space-y-2">
+                {customCitizens.length === 0 ? (
+                  <div className="py-4 text-center">
+                    <User className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground mb-2">
+                      No custom citizens yet
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Create custom personas or save citizens from completed assemblies
+                    </p>
+                    <a
+                      href="/citizens/custom"
+                      className="inline-flex items-center text-sm text-blue-600 hover:underline"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Create custom citizens
+                    </a>
+                  </div>
+                ) : (
+                  <>
+                    {selectedCustomIds.size >= (formData.num_citizens || 40) && (
+                      <div className="p-2 text-xs text-amber-700 bg-amber-50 rounded border border-amber-200">
+                        Selected custom citizens equal or exceed total citizen count. No GSS citizens will be generated.
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Selected citizens will be included in the assembly. Remaining slots
+                      ({Math.max(0, (formData.num_citizens || 40) - selectedCustomIds.size)}) will be
+                      filled with GSS-generated citizens.
+                    </p>
+                    {customCitizens.map((citizen) => (
+                      <label
+                        key={citizen.id}
+                        className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={selectedCustomIds.has(citizen.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedCustomIds);
+                            if (e.target.checked) {
+                              next.add(citizen.id);
+                            } else {
+                              next.delete(citizen.id);
+                            }
+                            setSelectedCustomIds(next);
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{citizen.name}</span>
+                            {citizen.political_leaning && (
+                              <Badge variant="outline" className="text-xs">
+                                {citizen.political_leaning}
+                              </Badge>
+                            )}
+                          </div>
+                          {citizen.background_summary && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                              {citizen.background_summary}
+                            </p>
+                          )}
+                        </div>
+                      </label>
+                    ))}
+                    <a
+                      href="/citizens/custom"
+                      className="inline-flex items-center text-xs text-blue-600 hover:underline mt-1"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Manage custom citizens
+                    </a>
+                  </>
+                )}
               </div>
             )}
           </div>

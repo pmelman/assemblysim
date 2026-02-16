@@ -18,6 +18,9 @@ import type {
   AppSettings,
   AppSettingsUpdateRequest,
   ErrorResponse,
+  CustomCitizenTemplate,
+  CustomCitizenCreateRequest,
+  CustomCitizenUpdateRequest,
 } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -281,6 +284,50 @@ export async function listResearch(
     `${API_BASE_URL}/assemblies/${assemblyId}/research${query}`
   );
   return handleResponse<RoundResearchResponse[]>(response);
+}
+
+// =============================================================================
+// CUSTOM CITIZEN ENDPOINTS
+// =============================================================================
+
+export async function createCustomCitizen(
+  request: CustomCitizenCreateRequest
+): Promise<CustomCitizenTemplate> {
+  const response = await fetch(`${API_BASE_URL}/custom-citizens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<CustomCitizenTemplate>(response);
+}
+
+export async function listCustomCitizens(): Promise<CustomCitizenTemplate[]> {
+  const response = await fetch(`${API_BASE_URL}/custom-citizens`);
+  return handleResponse<CustomCitizenTemplate[]>(response);
+}
+
+export async function getCustomCitizen(id: number): Promise<CustomCitizenTemplate> {
+  const response = await fetch(`${API_BASE_URL}/custom-citizens/${id}`);
+  return handleResponse<CustomCitizenTemplate>(response);
+}
+
+export async function updateCustomCitizen(
+  id: number,
+  request: CustomCitizenUpdateRequest
+): Promise<CustomCitizenTemplate> {
+  const response = await fetch(`${API_BASE_URL}/custom-citizens/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<CustomCitizenTemplate>(response);
+}
+
+export async function deleteCustomCitizen(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/custom-citizens/${id}`, {
+    method: 'DELETE',
+  });
+  return handleResponse<void>(response);
 }
 
 // =============================================================================

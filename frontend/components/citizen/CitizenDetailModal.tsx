@@ -9,13 +9,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CitizenAvatar } from './CitizenAvatar';
 import { VoteIndicator } from './VoteIndicator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getCitizen } from '@/lib/api';
+import { getCitizen, createCustomCitizen } from '@/lib/api';
 import type { CitizenResponse, CitizenDetailResponse } from '@/lib/types';
+import { Bookmark, Loader2, Check } from 'lucide-react';
 
 interface CitizenDetailModalProps {
   citizen: CitizenResponse | null;
@@ -32,6 +34,8 @@ export function CitizenDetailModal({
 }: CitizenDetailModalProps) {
   const [detail, setDetail] = useState<CitizenDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (citizen && open) {
@@ -42,8 +46,29 @@ export function CitizenDetailModal({
         .finally(() => setIsLoading(false));
     } else {
       setDetail(null);
+      setSaved(false);
     }
   }, [citizen, assemblyId, open]);
+
+  const handleSaveAsCustom = async () => {
+    if (!detail) return;
+    setIsSaving(true);
+    try {
+      await createCustomCitizen({
+        name: detail.name,
+        mode: 'full',
+        system_prompt: detail.system_prompt,
+        background_summary: detail.background_summary || undefined,
+        key_values: detail.key_values || undefined,
+        demographic_tags: detail.demographic_tags || undefined,
+      });
+      setSaved(true);
+    } catch (err) {
+      console.error('Failed to save as custom citizen:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (!citizen) {
     return null;
@@ -59,11 +84,34 @@ export function CitizenDetailModal({
               <DialogTitle className="text-xl">{citizen.name}</DialogTitle>
               <DialogDescription>Citizen #{citizen.id}</DialogDescription>
             </div>
-            {citizen.final_vote && (
-              <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              {citizen.final_vote && (
                 <VoteIndicator vote={citizen.final_vote} />
-              </div>
-            )}
+              )}
+              {detail && (
+                <Button
+                  variant={saved ? 'ghost' : 'outline'}
+                  size="sm"
+                  onClick={handleSaveAsCustom}
+                  disabled={isSaving || saved}
+                  title="Save as reusable custom citizen"
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : saved ? (
+                    <>
+                      <Check className="h-4 w-4 mr-1" />
+                      Saved
+                    </>
+                  ) : (
+                    <>
+                      <Bookmark className="h-4 w-4 mr-1" />
+                      Save as Custom
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </DialogHeader>
 

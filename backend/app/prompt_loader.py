@@ -137,3 +137,8 @@ def get_fact_checker_prompt() -> str:
 def get_perplexity_prompt() -> str:
     """Get the Perplexity research system prompt."""
     return get_prompt("perplexity", "system")
+
+
+def get_perplexity_research_query_prompt() -> str:
+    """Get the Perplexity follow-up research query prompt."""
+    return get_prompt("perplexity", "research_query")
