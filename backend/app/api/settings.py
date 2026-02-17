@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.models.database import get_db
 from app.models.models import AppSettings
 from app.models.schemas import AppSettingsResponse, AppSettingsUpdateRequest
+from app.api.auth import require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,10 @@ def get_settings(db: Session = Depends(get_db)):
 @router.put("", response_model=AppSettingsResponse)
 def update_settings(
     request: AppSettingsUpdateRequest,
+    admin: None = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Partial update of application settings."""
+    """Partial update of application settings (admin only)."""
     settings = _get_or_create_settings(db)
 
     update_data = request.model_dump(exclude_unset=True)

@@ -19,6 +19,7 @@ from typing import Optional, Callable, Any
 from datetime import datetime
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.models import (
     Assembly, Citizen, DeliberationGroup, Message, Report, RoundResearch,
@@ -399,13 +400,13 @@ class DeliberationEngine:
             group_id=group.id
         )
 
-        # Save group round summary
-        if not group.round_summaries:
-            group.round_summaries = []
-        group.round_summaries.append({
+        # Save group round summary (reassign to trigger SQLAlchemy change detection)
+        current_summaries = group.round_summaries or []
+        group.round_summaries = current_summaries + [{
             "round": round_num,
             "summary": summary
-        })
+        }]
+        flag_modified(group, "round_summaries")
         self.db.commit()
 
         logger.info(f"Group {group.name} round {round_num} complete")

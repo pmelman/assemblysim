@@ -9,9 +9,23 @@ import logging
 from typing import Optional
 from datetime import datetime
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_ws_token(token: str) -> Optional[int]:
+    """Validate a JWT token and return user_id, or None if invalid."""
+    from jose import JWTError, jwt
+    from app.config import get_settings
+
+    settings = get_settings()
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = int(payload.get("sub"))
+        return user_id
+    except (JWTError, ValueError, TypeError):
+        return None
 
 router = APIRouter(tags=["websocket"])
 
@@ -135,15 +149,16 @@ manager = ConnectionManager()
 
 
 @router.websocket("/ws/assemblies/{assembly_id}")
-async def websocket_endpoint(websocket: WebSocket, assembly_id: int):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    assembly_id: int,
+    token: Optional[str] = Query(default=None),
+):
     """
     WebSocket endpoint for real-time assembly updates.
 
-    Clients connect to this endpoint to receive:
-    - Status updates (citizen generation progress, etc.)
-    - New deliberation messages
-    - Vote updates
-    - Error notifications
+    Requires a valid JWT token as a query parameter:
+    ws://host/ws/assemblies/{id}?token=<jwt>
 
     Message format:
     {
@@ -153,6 +168,16 @@ async def websocket_endpoint(websocket: WebSocket, assembly_id: int):
         "timestamp": "2024-01-15T10:30:00Z"
     }
     """
+    # Validate authentication before accepting connection
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    user_id = _validate_ws_token(token)
+    if user_id is None:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+
     await manager.connect(websocket, assembly_id)
 
     try:

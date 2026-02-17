@@ -40,7 +40,12 @@ export class AssemblyWebSocket {
     }
 
     this.isClosing = false;
-    const url = `${WS_BASE_URL}/ws/assemblies/${this.assemblyId}`;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    if (!token) {
+      console.warn('WebSocket: No auth token available, skipping connection');
+      return;
+    }
+    const url = `${WS_BASE_URL}/ws/assemblies/${this.assemblyId}?token=${encodeURIComponent(token)}`;
 
     try {
       this.ws = new WebSocket(url);

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.models.database import get_db
 from app.models.models import (
     Assembly, Citizen, DeliberationGroup, Message, BriefingBook, Report,
-    RoundResearch, AssemblyStatus
+    RoundResearch, AssemblyStatus, User
 )
 from app.models.schemas import (
     AssemblyCreateRequest, AssemblyResponse, AssemblyDetailResponse,
@@ -27,6 +27,15 @@ from app.api.services import (
     generate_briefing_for_assembly,
     get_assembly_with_details
 )
+from app.api.auth import get_current_user
+
+
+def _check_assembly_owner(assembly: Assembly, user: User):
+    """Raise 403 if user doesn't own the assembly (admin bypasses)."""
+    if user.is_admin:
+        return
+    if assembly.user_id is not None and assembly.user_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not own this assembly")
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +49,7 @@ router = APIRouter(prefix="/assemblies", tags=["assemblies"])
 @router.post("", response_model=AssemblyResponse, status_code=201)
 async def create_assembly(
     request: AssemblyCreateRequest,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -55,6 +65,7 @@ async def create_assembly(
         round_prompts_data = [rp.model_dump() for rp in request.round_prompts]
 
     assembly = Assembly(
+        user_id=current_user.id,
         topic=request.topic,
         num_citizens=request.num_citizens,
         num_groups=request.num_groups,
@@ -80,12 +91,15 @@ def list_assemblies(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    List all assemblies with optional filtering.
+    List assemblies owned by the current user (admins see all).
     """
     query = db.query(Assembly)
+    if not current_user.is_admin:
+        query = query.filter(Assembly.user_id == current_user.id)
 
     if status:
         try:
@@ -110,6 +124,7 @@ def list_assemblies(
 @router.get("/{assembly_id}", response_model=AssemblyDetailResponse)
 def get_assembly(
     assembly_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -119,6 +134,8 @@ def get_assembly(
 
     if not assembly:
         raise HTTPException(status_code=404, detail="Assembly not found")
+
+    _check_assembly_owner(assembly, current_user)
 
     # Load round research
     round_research_records = db.query(RoundResearch).filter(
@@ -197,6 +214,7 @@ def get_assembly(
 @router.delete("/{assembly_id}", status_code=204)
 def delete_assembly(
     assembly_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -206,6 +224,8 @@ def delete_assembly(
 
     if not assembly:
         raise HTTPException(status_code=404, detail="Assembly not found")
+
+    _check_assembly_owner(assembly, current_user)
 
     db.delete(assembly)
     db.commit()
@@ -266,6 +286,7 @@ def get_citizen(
 async def generate_citizens(
     assembly_id: int,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -278,6 +299,8 @@ async def generate_citizens(
 
     if not assembly:
         raise HTTPException(status_code=404, detail="Assembly not found")
+
+    _check_assembly_owner(assembly, current_user)
 
     if assembly.status != AssemblyStatus.PENDING:
         raise HTTPException(
@@ -326,6 +349,7 @@ async def generate_briefing(
     assembly_id: int,
     request: BriefingGenerateRequest,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -337,6 +361,8 @@ async def generate_briefing(
 
     if not assembly:
         raise HTTPException(status_code=404, detail="Assembly not found")
+
+    _check_assembly_owner(assembly, current_user)
 
     if assembly.status == AssemblyStatus.GENERATING_BRIEFING:
         raise HTTPException(
@@ -393,6 +419,7 @@ def get_briefing(
 @router.delete("/{assembly_id}/briefing", status_code=204)
 def delete_briefing(
     assembly_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -405,8 +432,12 @@ def delete_briefing(
     if not briefing:
         raise HTTPException(status_code=404, detail="Briefing book not found")
 
-    # Update assembly status if it was READY (go back to CITIZENS_READY)
+    # Check ownership
     assembly = db.query(Assembly).filter(Assembly.id == assembly_id).first()
+    if assembly:
+        _check_assembly_owner(assembly, current_user)
+
+    # Update assembly status if it was READY (go back to CITIZENS_READY)
     if assembly and assembly.status == AssemblyStatus.READY:
         assembly.status = AssemblyStatus.CITIZENS_READY
 
@@ -426,6 +457,7 @@ def delete_briefing(
 async def start_deliberation(
     assembly_id: int,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -441,6 +473,8 @@ async def start_deliberation(
 
     if not assembly:
         raise HTTPException(status_code=404, detail="Assembly not found")
+
+    _check_assembly_owner(assembly, current_user)
 
     # Check status
     if assembly.status not in [AssemblyStatus.READY, AssemblyStatus.CITIZENS_READY]:

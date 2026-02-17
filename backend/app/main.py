@@ -69,7 +69,15 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Silicon Citizens' Assembly API...")
     settings = get_settings()
     logger.info(f"App: {settings.APP_NAME} v{settings.APP_VERSION}")
-    logger.info(f"Database: {settings.DATABASE_URL}")
+
+    # Validate SECRET_KEY is configured
+    if not settings.SECRET_KEY or len(settings.SECRET_KEY) < 16:
+        raise RuntimeError(
+            "SECRET_KEY must be set in .env and be at least 16 characters. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+        )
+
+    logger.info(f"Database: {settings.DATABASE_URL.split('@')[-1] if '@' in settings.DATABASE_URL else settings.DATABASE_URL}")
 
     # Initialize database
     init_db()
@@ -152,7 +160,7 @@ app.include_router(assemblies_router, dependencies=[Depends(get_current_user)])
 app.include_router(settings_router, dependencies=[Depends(get_current_user)])
 app.include_router(custom_citizens_router, dependencies=[Depends(get_current_user)])
 
-# WebSocket router — keep unauthenticated for now (WS auth is more complex)
+# WebSocket router (authenticates via token query param)
 app.include_router(websocket_router)
 
 

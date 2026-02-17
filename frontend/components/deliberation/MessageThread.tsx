@@ -9,6 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import type { MessageResponse, RoundPromptConfig } from '@/lib/types';
 import { Search } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface MessageThreadProps {
   messages: MessageResponse[];
@@ -148,17 +150,19 @@ export function MessageThread({
                     </span>
                   </div>
                   <div className="text-sm text-blue-900 dark:text-blue-100 prose prose-sm max-w-none prose-blue">
-                    <div
-                      dangerouslySetInnerHTML={{
-                        __html: message.content
-                          .replace(/^## (.+)$/gm, '<h4 class="text-blue-800 dark:text-blue-300 font-semibold mt-3 mb-1">$1</h4>')
-                          .replace(/^### (.+)$/gm, '<h5 class="text-blue-700 dark:text-blue-400 font-medium mt-2 mb-1">$1</h5>')
-                          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                          .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" class="text-blue-600 underline" target="_blank" rel="noopener noreferrer">$1</a>')
-                          .replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>')
-                          .replace(/\n/g, '<br/>')
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ href, children }) => {
+                          const safeHref = href && (href.startsWith('http://') || href.startsWith('https://')) ? href : undefined;
+                          return safeHref ? (
+                            <a href={safeHref} className="text-blue-600 underline" target="_blank" rel="noopener noreferrer">{children}</a>
+                          ) : <span>{children}</span>;
+                        },
                       }}
-                    />
+                    >
+                      {message.content}
+                    </ReactMarkdown>
                   </div>
                 </div>
               );

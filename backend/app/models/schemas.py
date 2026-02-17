@@ -228,6 +228,7 @@ class RoundResearchResponse(BaseModel):
 class AssemblyResponse(BaseModel):
     """Basic response model for an assembly."""
     id: int
+    user_id: Optional[int] = None
     topic: str
     status: str
     num_citizens: int

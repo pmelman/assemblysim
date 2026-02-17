@@ -77,6 +77,7 @@ class Assembly(Base):
     __tablename__ = "assemblies"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     topic = Column(String(500), nullable=False)
     status = Column(Enum(AssemblyStatus), default=AssemblyStatus.PENDING, nullable=False)
 
@@ -105,6 +106,7 @@ class Assembly(Base):
     completed_at = Column(DateTime, nullable=True)
 
     # Relationships
+    owner = relationship("User", foreign_keys=[user_id])
     citizens = relationship("Citizen", back_populates="assembly", cascade="all, delete-orphan")
     groups = relationship("DeliberationGroup", back_populates="assembly", cascade="all, delete-orphan")
     briefing_book = relationship("BriefingBook", back_populates="assembly", uselist=False, cascade="all, delete-orphan")

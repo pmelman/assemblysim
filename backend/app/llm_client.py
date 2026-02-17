@@ -72,6 +72,21 @@ class LLMClient:
         if not self.api_key:
             raise ValueError(f"API key not configured for provider: {self.provider}")
 
+        # Reusable HTTP client (created lazily, shared across calls)
+        self._http_client: Optional[httpx.AsyncClient] = None
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        """Get or create the reusable async HTTP client."""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=60.0)
+        return self._http_client
+
+    async def close(self):
+        """Close the reusable HTTP client. Call when done with the LLM client."""
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()
+            self._http_client = None
+
     async def complete(
         self,
         prompt: str,
@@ -136,51 +151,51 @@ class LLMClient:
             "max_tokens": max_tokens
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=self.headers,
-                json=payload
-            )
+        client = self._get_http_client()
+        response = await client.post(
+            f"{self.base_url}/chat/completions",
+            headers=self.headers,
+            json=payload
+        )
 
-            if response.status_code != 200:
-                logger.error(f"LLM API error: {response.status_code} - {response.text}")
-                response.raise_for_status()
+        if response.status_code != 200:
+            logger.error(f"LLM API error: {response.status_code}")
+            response.raise_for_status()
 
-            result = response.json()
+        result = response.json()
 
-            # Debug logging for response structure
-            logger.debug(f"API Response keys: {result.keys()}")
-            if "choices" in result and len(result["choices"]) > 0:
-                choice = result["choices"][0]
-                logger.debug(f"Choice keys: {choice.keys()}")
-                if "message" in choice:
-                    message = choice["message"]
-                    logger.debug(f"Message keys: {message.keys()}")
+        # Debug logging for response structure
+        logger.debug(f"API Response keys: {result.keys()}")
+        if "choices" in result and len(result["choices"]) > 0:
+            choice = result["choices"][0]
+            logger.debug(f"Choice keys: {choice.keys()}")
+            if "message" in choice:
+                message = choice["message"]
+                logger.debug(f"Message keys: {message.keys()}")
 
-                    # Get content
-                    content = message.get("content", "") or ""
-                    logger.debug(f"Content length: {len(content)}")
+                # Get content
+                content = message.get("content", "") or ""
+                logger.debug(f"Content length: {len(content)}")
 
-                    # For thinking models (like Kimi-K2), check reasoning field
-                    reasoning = message.get("reasoning", "") or ""
-                    if reasoning:
-                        logger.debug(f"Reasoning length: {len(reasoning)}")
-                        logger.debug(f"Reasoning preview: {reasoning[:200]}")
+                # For thinking models (like Kimi-K2), check reasoning field
+                reasoning = message.get("reasoning", "") or ""
+                if reasoning:
+                    logger.debug(f"Reasoning length: {len(reasoning)}")
+                    logger.debug(f"Reasoning preview: {reasoning[:200]}")
 
-                    # If content is empty but reasoning exists, the model might have
-                    # put the actual response in reasoning instead
-                    if not content and reasoning:
-                        logger.info("Content empty, using reasoning field instead")
-                        return reasoning
+                # If content is empty but reasoning exists, the model might have
+                # put the actual response in reasoning instead
+                if not content and reasoning:
+                    logger.info("Content empty, using reasoning field instead")
+                    return reasoning
 
-                    return content
-                else:
-                    logger.warning(f"No 'message' in choice. Choice: {choice}")
-                    return ""
+                return content
             else:
-                logger.warning(f"No choices in result. Result: {result}")
+                logger.warning(f"No 'message' in choice. Choice: {choice}")
                 return ""
+        else:
+            logger.warning(f"No choices in result. Result: {result}")
+            return ""
 
     async def _complete_anthropic_format(
         self,
@@ -199,19 +214,23 @@ class LLMClient:
         if system_prompt:
             payload["system"] = system_prompt
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{self.base_url}/messages",
-                headers=self.headers,
-                json=payload
-            )
+        client = self._get_http_client()
+        response = await client.post(
+            f"{self.base_url}/messages",
+            headers=self.headers,
+            json=payload
+        )
 
-            if response.status_code != 200:
-                logger.error(f"Anthropic API error: {response.status_code} - {response.text}")
-                response.raise_for_status()
+        if response.status_code != 200:
+            logger.error(f"Anthropic API error: {response.status_code}")
+            response.raise_for_status()
 
-            result = response.json()
-            return result["content"][0]["text"]
+        result = response.json()
+        content_blocks = result.get("content", [])
+        if content_blocks and "text" in content_blocks[0]:
+            return content_blocks[0]["text"]
+        logger.warning(f"Unexpected Anthropic response structure: {list(result.keys())}")
+        return ""
 
     def complete_sync(
         self,
