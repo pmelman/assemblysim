@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, EmailStr
 
 class RegisterRequest(BaseModel):
     """Request body for user registration."""
-    email: str = Field(..., description="User email address")
+    email: EmailStr = Field(..., description="User email address")
     password: str = Field(..., min_length=8, description="Password (min 8 chars)")
     username: str = Field(..., min_length=2, max_length=100, description="Display name")
     invite_code: str = Field(..., description="Valid invite code")
@@ -25,7 +25,7 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     """Request body for user login."""
-    email: str = Field(..., description="User email address")
+    email: EmailStr = Field(..., description="User email address")
     password: str = Field(..., description="Password")
 
 
@@ -375,6 +375,7 @@ class CustomCitizenUpdateRequest(BaseModel):
 class CustomCitizenTemplateResponse(BaseModel):
     """Response model for a custom citizen template."""
     id: int
+    user_id: Optional[int] = None
     name: str
     mode: str
     background_summary: Optional[str] = None

@@ -1384,8 +1384,18 @@ Return between 1 and 3 queries. If no factual questions need researching, return
         round_msgs = [m for m in self.all_messages if m.get("round") == round_num]
         return self._format_context(round_msgs)
 
-    def _get_full_transcript(self) -> str:
-        """Get the complete deliberation transcript."""
+    def _get_full_transcript(self, max_chars: int = 80000) -> str:
+        """Get the deliberation transcript, truncated to fit model context windows.
+
+        With 40 citizens x 3 rounds the full transcript can easily exceed
+        100k+ characters.  We keep the first and last portions (most useful
+        for report generation) and replace the middle with a marker.
+
+        Args:
+            max_chars: Maximum character length for the returned transcript.
+                       Defaults to 80 000 (~20k tokens), safely within most
+                       model context windows when combined with other prompt text.
+        """
         lines = []
 
         for msg in self.all_messages:
@@ -1406,7 +1416,27 @@ Return between 1 and 3 queries. If no factual questions need researching, return
 
             lines.append(f"{phase_label} {speaker}: {msg['content']}")
 
-        return "\n\n".join(lines)
+        full = "\n\n".join(lines)
+
+        if len(full) <= max_chars:
+            return full
+
+        # Keep first 60% and last 40% of the budget (opening rounds + final voting
+        # are most important for report generation)
+        head_budget = int(max_chars * 0.6)
+        tail_budget = max_chars - head_budget - 200  # 200 chars for the marker
+        omitted = len(full) - head_budget - tail_budget
+
+        logger.warning(
+            f"Transcript truncated: {len(full)} chars -> {max_chars} chars "
+            f"({omitted} chars omitted from middle)"
+        )
+
+        return (
+            full[:head_budget]
+            + f"\n\n[... {omitted:,} characters omitted for brevity ...]\n\n"
+            + full[-tail_budget:]
+        )
 
     async def _update_status(self, status: AssemblyStatus, message: Optional[str] = None):
         """Update assembly status and optionally broadcast."""

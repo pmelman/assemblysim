@@ -10,6 +10,7 @@ from typing import Optional
 
 from app.llm_client import get_llm_client
 from app.prompt_loader import get_recorder_prompt
+from app.input_sanitizer import wrap_topic_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class RecorderAgent:
             assembly_topic: The policy topic being deliberated
         """
         self.topic = assembly_topic
+        self.wrapped_topic = wrap_topic_for_prompt(assembly_topic)
         self.system_prompt = get_recorder_prompt()
         self.llm = get_llm_client(purpose="utility")
         self._round_summaries: list[str] = []
@@ -58,9 +60,9 @@ class RecorderAgent:
         """
         group_context = f" (Group {group_name})" if group_name else ""
 
-        prompt = f"""Summarize Round {round_number}{group_context} of deliberation on:
+        prompt = f"""Summarize Round {round_number}{group_context} of deliberation.
 
-"{self.topic}"
+{self.wrapped_topic}
 
 TRANSCRIPT:
 {transcript}
@@ -108,7 +110,7 @@ Be concise but comprehensive. Do not include your own opinions."""
         """
         prompt = f"""Analyze this deliberation and identify the key themes:
 
-TOPIC: {self.topic}
+{self.wrapped_topic}
 
 TRANSCRIPT:
 {full_transcript}
@@ -168,7 +170,7 @@ Vote Results:
 
         prompt = f"""Identify areas of consensus from this deliberation:
 
-TOPIC: {self.topic}
+{self.wrapped_topic}
 {vote_context}
 
 TRANSCRIPT:
@@ -208,7 +210,7 @@ Focus on genuine consensus, not just majority views."""
         """
         prompt = f"""Identify areas of disagreement from this deliberation:
 
-TOPIC: {self.topic}
+{self.wrapped_topic}
 
 TRANSCRIPT:
 {transcript}
@@ -265,7 +267,7 @@ Present all sides fairly without taking a position."""
 
         prompt = f"""Generate a minority report for this deliberation:
 
-TOPIC: {self.topic}
+{self.wrapped_topic}
 
 Vote Results: {vote_text}
 
@@ -349,7 +351,7 @@ This should give voice to those whose views were not fully represented in the fi
 
         prompt = f"""Generate an executive summary for this citizens' assembly:
 
-TOPIC: {self.topic}
+{self.wrapped_topic}
 
 KEY THEMES: {themes_text}
 
@@ -411,7 +413,7 @@ Be objective and comprehensive. This summary will be read by policymakers and th
 
         prompt = f"""Analyze Group {group_name}'s deliberation and generate two summaries:
 
-TOPIC: {self.topic}
+{self.wrapped_topic}
 
 ROUND SUMMARIES:
 {summaries_text}

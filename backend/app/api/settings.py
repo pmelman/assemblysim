@@ -6,7 +6,7 @@ REST API endpoints for managing persistent application defaults.
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.database import get_db
@@ -46,6 +46,12 @@ def update_settings(
     """Partial update of application settings (admin only)."""
     settings = _get_or_create_settings(db)
 
+    UPDATABLE_FIELDS = {
+        "default_num_citizens", "default_num_groups", "default_num_rounds",
+        "default_sampling_strategy", "default_round_prompts",
+        "default_max_research_calls_per_round", "default_max_research_tokens_per_call",
+    }
+
     update_data = request.model_dump(exclude_unset=True)
     # Convert RoundPromptConfig objects to dicts if present
     if "default_round_prompts" in update_data and update_data["default_round_prompts"] is not None:
@@ -55,6 +61,8 @@ def update_settings(
         ]
 
     for field, value in update_data.items():
+        if field not in UPDATABLE_FIELDS:
+            raise HTTPException(status_code=400, detail=f"Field '{field}' is not updatable")
         setattr(settings, field, value)
 
     db.commit()

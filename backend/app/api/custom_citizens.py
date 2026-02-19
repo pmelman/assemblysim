@@ -11,16 +11,25 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.database import get_db
-from app.models.models import CustomCitizenTemplate
+from app.models.models import CustomCitizenTemplate, User
 from app.models.schemas import (
     CustomCitizenCreateRequest,
     CustomCitizenUpdateRequest,
     CustomCitizenTemplateResponse,
 )
+from app.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/custom-citizens", tags=["custom-citizens"])
+
+
+def _check_template_owner(template: CustomCitizenTemplate, user: User):
+    """Raise 403 if user doesn't own the template (admin bypasses)."""
+    if user.is_admin:
+        return
+    if template.user_id is not None and template.user_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not own this template")
 
 
 TRAITS_PERSONA_TEMPLATE = """Create a persona for a citizens' assembly participant with the following characteristics:
@@ -106,6 +115,7 @@ Keep your responses concise and natural. You are a thoughtful citizen, not a pol
 @router.post("", response_model=CustomCitizenTemplateResponse, status_code=201)
 async def create_custom_citizen(
     request: CustomCitizenCreateRequest,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -143,6 +153,7 @@ async def create_custom_citizen(
             )
 
     template = CustomCitizenTemplate(
+        user_id=current_user.id,
         name=request.name,
         mode=request.mode,
         background_summary=request.background_summary,
@@ -160,15 +171,23 @@ async def create_custom_citizen(
 
 
 @router.get("", response_model=list[CustomCitizenTemplateResponse])
-def list_custom_citizens(db: Session = Depends(get_db)):
-    """List all custom citizen templates."""
-    return db.query(CustomCitizenTemplate).order_by(
-        CustomCitizenTemplate.created_at.desc()
-    ).all()
+def list_custom_citizens(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List custom citizen templates owned by the current user (admins see all)."""
+    query = db.query(CustomCitizenTemplate)
+    if not current_user.is_admin:
+        query = query.filter(CustomCitizenTemplate.user_id == current_user.id)
+    return query.order_by(CustomCitizenTemplate.created_at.desc()).all()
 
 
 @router.get("/{template_id}", response_model=CustomCitizenTemplateResponse)
-def get_custom_citizen(template_id: int, db: Session = Depends(get_db)):
+def get_custom_citizen(
+    template_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Get a single custom citizen template."""
     template = db.query(CustomCitizenTemplate).filter(
         CustomCitizenTemplate.id == template_id
@@ -177,6 +196,7 @@ def get_custom_citizen(template_id: int, db: Session = Depends(get_db)):
     if not template:
         raise HTTPException(status_code=404, detail="Custom citizen template not found")
 
+    _check_template_owner(template, current_user)
     return template
 
 
@@ -184,6 +204,7 @@ def get_custom_citizen(template_id: int, db: Session = Depends(get_db)):
 async def update_custom_citizen(
     template_id: int,
     request: CustomCitizenUpdateRequest,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Update a custom citizen template."""
@@ -193,6 +214,8 @@ async def update_custom_citizen(
 
     if not template:
         raise HTTPException(status_code=404, detail="Custom citizen template not found")
+
+    _check_template_owner(template, current_user)
 
     update_data = request.model_dump(exclude_unset=True)
 
@@ -218,7 +241,14 @@ async def update_custom_citizen(
             logger.error(f"Error regenerating system prompt: {e}")
             update_data["system_prompt"] = _fallback_system_prompt(name, bg, kv, pl)
 
+    UPDATABLE_FIELDS = {
+        "name", "mode", "background_summary", "key_values",
+        "demographic_tags", "political_leaning", "system_prompt",
+    }
+
     for field, value in update_data.items():
+        if field not in UPDATABLE_FIELDS:
+            raise HTTPException(status_code=400, detail=f"Field '{field}' is not updatable")
         setattr(template, field, value)
 
     db.commit()
@@ -229,7 +259,11 @@ async def update_custom_citizen(
 
 
 @router.delete("/{template_id}", status_code=204)
-def delete_custom_citizen(template_id: int, db: Session = Depends(get_db)):
+def delete_custom_citizen(
+    template_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Delete a custom citizen template."""
     template = db.query(CustomCitizenTemplate).filter(
         CustomCitizenTemplate.id == template_id
@@ -238,6 +272,7 @@ def delete_custom_citizen(template_id: int, db: Session = Depends(get_db)):
     if not template:
         raise HTTPException(status_code=404, detail="Custom citizen template not found")
 
+    _check_template_owner(template, current_user)
     db.delete(template)
     db.commit()
 

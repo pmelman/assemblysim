@@ -28,6 +28,7 @@ from app.api.services import (
     get_assembly_with_details
 )
 from app.api.auth import get_current_user
+from app.input_sanitizer import sanitize_topic
 
 
 def _check_assembly_owner(assembly: Assembly, user: User):
@@ -57,7 +58,13 @@ async def create_assembly(
 
     Citizens must be generated separately using POST /assemblies/{id}/citizens.
     """
-    logger.info(f"Creating assembly for topic: {request.topic[:50]}...")
+    # Sanitize topic to prevent prompt injection
+    try:
+        clean_topic = sanitize_topic(request.topic)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    logger.info(f"Creating assembly for topic: {clean_topic[:50]}...")
 
     # Create assembly record
     round_prompts_data = None
@@ -66,7 +73,7 @@ async def create_assembly(
 
     assembly = Assembly(
         user_id=current_user.id,
-        topic=request.topic,
+        topic=clean_topic,
         num_citizens=request.num_citizens,
         num_groups=request.num_groups,
         num_rounds=request.num_rounds,

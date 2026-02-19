@@ -38,6 +38,21 @@ class PerplexityClient:
         self.api_key = self.settings.PERPLEXITY_API_KEY
         self.base_url = "https://api.perplexity.ai"
         self.system_prompt = get_perplexity_prompt()
+        self._http_client: Optional[httpx.AsyncClient] = None
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        """Get or create the reusable async HTTP client."""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                timeout=float(self.settings.PERPLEXITY_TIMEOUT)
+            )
+        return self._http_client
+
+    async def close(self):
+        """Close the reusable HTTP client."""
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()
+            self._http_client = None
 
     @property
     def is_available(self) -> bool:
@@ -70,9 +85,10 @@ class PerplexityClient:
             "detailed": "Provide in-depth analysis with extensive evidence, historical context, and implementation details."
         }.get(depth, "Provide comprehensive coverage of main arguments and evidence.")
 
-        user_prompt = f"""Research and analyze this policy topic for a citizens' deliberative assembly:
+        from app.input_sanitizer import wrap_topic_for_prompt
+        user_prompt = f"""Research and analyze the following policy topic for a citizens' deliberative assembly:
 
-TOPIC: {topic}
+{wrap_topic_for_prompt(topic)}
 
 {detail_instruction}
 
@@ -145,83 +161,84 @@ Format your response as the JSON structure specified in your instructions."""
             }
         }
 
-        async with httpx.AsyncClient(timeout=float(self.settings.PERPLEXITY_TIMEOUT)) as client:
-            # Use streaming — sonar-deep-research returns empty content without it
-            full_content = ""
-            citations = []
-            search_results = []
-            last_chunk = {}
+        client = self._get_http_client()
 
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload
-            ) as response:
-                if response.status_code != 200:
-                    body = await response.aread()
-                    logger.error(f"Perplexity API error: {response.status_code} - {body.decode()}")
-                    response.raise_for_status()
+        # Use streaming — sonar-deep-research returns empty content without it
+        full_content = ""
+        citations = []
+        search_results = []
+        last_chunk = {}
 
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        last_chunk = chunk
-                        delta = chunk.get("choices", [{}])[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            full_content += content
-                        # Capture citations/search_results from final chunks
-                        if "citations" in chunk:
-                            citations = chunk["citations"]
-                        if "search_results" in chunk:
-                            search_results = chunk["search_results"]
-                    except json.JSONDecodeError:
-                        continue
+        async with client.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            headers=headers,
+            json=payload
+        ) as response:
+            if response.status_code != 200:
+                body = await response.aread()
+                logger.error(f"Perplexity API error: {response.status_code} - {body.decode()}")
+                response.raise_for_status()
 
-            # Strip <think>...</think> reasoning blocks from deep-research models
-            full_content = re.sub(r"<think>.*?</think>\s*", "", full_content, flags=re.DOTALL)
-            # Handle truncated thinking (no closing tag)
-            if "<think>" in full_content:
-                full_content = full_content.split("<think>")[0].strip()
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    last_chunk = chunk
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        full_content += content
+                    # Capture citations/search_results from final chunks
+                    if "citations" in chunk:
+                        citations = chunk["citations"]
+                    if "search_results" in chunk:
+                        search_results = chunk["search_results"]
+                except json.JSONDecodeError:
+                    continue
 
-            # Build a response dict matching the non-streaming format
-            result = {
-                "id": last_chunk.get("id", ""),
-                "model": last_chunk.get("model", self.settings.PERPLEXITY_MODEL),
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": full_content
-                        }
+        # Strip <think>...</think> reasoning blocks from deep-research models
+        full_content = re.sub(r"<think>.*?</think>\s*", "", full_content, flags=re.DOTALL)
+        # Handle truncated thinking (no closing tag)
+        if "<think>" in full_content:
+            full_content = full_content.split("<think>")[0].strip()
+
+        # Build a response dict matching the non-streaming format
+        result = {
+            "id": last_chunk.get("id", ""),
+            "model": last_chunk.get("model", self.settings.PERPLEXITY_MODEL),
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": full_content
                     }
-                ],
-                "citations": citations,
-                "search_results": search_results,
-                "usage": last_chunk.get("usage", {})
-            }
+                }
+            ],
+            "citations": citations,
+            "search_results": search_results,
+            "usage": last_chunk.get("usage", {})
+        }
 
-            # Log response
-            logger.debug(f"RESPONSE: {full_content[:1000]}..." if len(full_content) > 1000 else f"RESPONSE: {full_content}")
+        # Log response
+        logger.debug(f"RESPONSE: {full_content[:1000]}..." if len(full_content) > 1000 else f"RESPONSE: {full_content}")
 
-            if citations:
-                logger.debug(f"CITATIONS: {len(citations)} sources")
-                for i, cite in enumerate(citations[:3], 1):
-                    if isinstance(cite, str):
-                        logger.debug(f"  {i}. {cite}")
-                    elif isinstance(cite, dict):
-                        logger.debug(f"  {i}. {cite.get('title', 'Unknown')}: {cite.get('url', 'No URL')}")
-                    else:
-                        logger.debug(f"  {i}. {cite}")
-            logger.debug("=" * 80)
+        if citations:
+            logger.debug(f"CITATIONS: {len(citations)} sources")
+            for i, cite in enumerate(citations[:3], 1):
+                if isinstance(cite, str):
+                    logger.debug(f"  {i}. {cite}")
+                elif isinstance(cite, dict):
+                    logger.debug(f"  {i}. {cite.get('title', 'Unknown')}: {cite.get('url', 'No URL')}")
+                else:
+                    logger.debug(f"  {i}. {cite}")
+        logger.debug("=" * 80)
 
-            return result
+        return result
 
     def _extract_json(self, content: str) -> dict:
         """Extract a JSON object from content that may contain surrounding text.

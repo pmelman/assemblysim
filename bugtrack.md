@@ -1,35 +1,25 @@
 # Assembly Sim Bug Tracker
 
-Remaining issues from security & code review (Feb 2026). Priority fixes 1-7 have been implemented.
+Remaining issues from security & code review (Feb 2026). Priority fixes 1-7 and HIGH H1-H5 have been implemented.
 
 ---
 
-## HIGH
+## HIGH — All fixed
 
-### H1. Prompt injection via assembly topic
-**Files:** `agents/moderator_agent.py:52`, `orchestration/deliberation_engine.py:200`
-User-provided `topic` string is embedded directly in LLM prompts with no sanitization. A malicious topic can hijack all agent prompts.
-**Fix:** Sanitize the topic string; treat user input as data, not instructions.
+### ~~H1. Prompt injection via assembly topic~~ FIXED
+Added `input_sanitizer.py` with topic sanitization (control char stripping, encoded data detection for base64/hex/unicode/URL-encoding, length cap) and `wrap_topic_for_prompt()` XML delimiters. Applied to API entry point, moderator agent, recorder agent, and Perplexity client.
 
-### H2. Unbounded transcript sent to LLM
-**File:** `orchestration/deliberation_engine.py:1386-1408`
-`_get_full_transcript()` concatenates ALL messages with no truncation. With 40 citizens x 3 rounds, the transcript can exceed model context windows.
-**Fix:** Add consistent truncation or summarize-then-analyze pipeline.
+### ~~H2. Unbounded transcript sent to LLM~~ FIXED
+`_get_full_transcript()` now accepts `max_chars` (default 80k) and truncates from the middle, keeping first 60% and last 40%.
 
-### H3. New httpx client per Perplexity call
-**File:** `knowledge/perplexity_client.py`
-Similar to the LLM client issue (now fixed), Perplexity client creates a new httpx client per call.
-**Fix:** Reuse a single `AsyncClient` instance.
+### ~~H3. New httpx client per Perplexity call~~ FIXED
+Perplexity client now reuses a singleton `AsyncClient` with lazy init, matching the LLM client pattern.
 
-### H4. Unrestricted setattr on models
-**Files:** `api/settings.py:55`, `api/custom_citizens.py:221`
-`setattr(model, field, value)` loop could overwrite arbitrary attributes (e.g. `id`) if schemas are loosened.
-**Fix:** Validate against an explicit allowlist of updatable fields.
+### ~~H4. Unrestricted setattr on models~~ FIXED
+Added explicit `UPDATABLE_FIELDS` allowlists in `api/settings.py` and `api/custom_citizens.py`.
 
-### H5. No ownership on custom citizen templates
-**File:** `api/custom_citizens.py`
-`CustomCitizenTemplate` has no `user_id`. Any authenticated user can view/modify/delete any other user's templates.
-**Fix:** Add `user_id` FK and filter queries.
+### ~~H5. No ownership on custom citizen templates~~ FIXED
+Added `user_id` FK to `CustomCitizenTemplate`, ownership checks on all CRUD endpoints, and user-scoped listing (admins see all).
 
 ---
 

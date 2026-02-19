@@ -10,6 +10,7 @@ from typing import Optional
 
 from app.llm_client import get_llm_client
 from app.prompt_loader import get_moderator_prompt, get_moderator_deduplicate_prompt
+from app.input_sanitizer import wrap_topic_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class ModeratorAgent:
             assembly_topic: The policy topic being deliberated
         """
         self.topic = assembly_topic
+        self.wrapped_topic = wrap_topic_for_prompt(assembly_topic)
         self.system_prompt = get_moderator_prompt()
         self.llm = get_llm_client(purpose="moderator")
 
@@ -49,9 +51,9 @@ class ModeratorAgent:
         Returns:
             Opening statement text
         """
-        prompt = f"""You are opening a citizens' deliberative assembly on the topic:
+        prompt = f"""You are opening a citizens' deliberative assembly.
 
-"{self.topic}"
+{self.wrapped_topic}
 
 There are {len(citizen_names)} citizens participating. Welcome them warmly, explain the purpose of deliberation, and set expectations for respectful dialogue.
 
@@ -96,9 +98,9 @@ Let's begin. Who would like to share their initial thoughts?"""
         Returns:
             Round opening statement
         """
-        prompt = f"""You are opening Round {round_number} of deliberation on:
+        prompt = f"""You are opening Round {round_number} of deliberation.
 
-"{self.topic}"
+{self.wrapped_topic}
 
 Citizens in this group: {', '.join(citizen_names)}
 """
@@ -158,7 +160,7 @@ Acknowledge the progress made and introduce the focus for this round.
         """
         prompt = f"""You need to invite {citizen_name} to share their thoughts.
 
-Topic: {self.topic}
+{self.wrapped_topic}
 """
 
         if context:
@@ -210,7 +212,7 @@ Keep it to 1-2 sentences. You might:
         prompt = f"""{last_speaker} just said:
 "{last_statement}"
 
-Topic: {self.topic}
+{self.wrapped_topic}
 """
 
         if discussion_context:
@@ -272,7 +274,7 @@ Key Disagreements: {disagreements[:200]}...
 
         prompt = f"""Present a plenary synthesis to the full assembly.
 
-Topic: {topic}
+{wrap_topic_for_prompt(topic)}
 
 GROUP SUMMARIES:
 {summaries_text}
@@ -361,7 +363,7 @@ Be neutral and comprehensive."""
 
         prompt = f"""The deliberation is complete. Transition to the voting phase.
 
-Topic: {self.topic}
+{self.wrapped_topic}
 
 Discussion Summary:
 {discussion_summary}
@@ -408,7 +410,7 @@ We've heard many perspectives and explored the issue deeply. Now it's time to ca
 
         prompt = f"""Close the citizens' assembly with final remarks.
 
-Topic: {self.topic}
+{self.wrapped_topic}
 
 Vote Results:
 - Support: {vote_results.get('support', 0)}
@@ -462,7 +464,7 @@ Your thoughtful engagement with this important issue demonstrates the value of d
             for i, p in enumerate(proposals)
         ])
 
-        prompt = f"""Topic: {topic}
+        prompt = f"""{wrap_topic_for_prompt(topic)}
 
 PROPOSALS TO REVIEW:
 {proposals_text}
