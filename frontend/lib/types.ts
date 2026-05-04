@@ -349,6 +349,41 @@ export interface CustomCitizenUpdateRequest {
   system_prompt?: string | null;
 }
 
+// =============================================================================
+// ASSEMBLY PROFILE TYPES
+// =============================================================================
+
+export interface AssemblyProfileConfig {
+  num_citizens?: number;
+  num_groups?: number;
+  num_rounds?: number;
+  sampling_strategy?: 'stratified' | 'quota' | 'random';
+  round_prompts?: RoundPromptConfig[] | null;
+  max_research_calls_per_round?: number;
+  max_research_tokens_per_call?: number;
+  custom_citizen_ids?: number[] | null;
+  topic?: string;
+}
+
+export interface AssemblyProfile {
+  id: number;
+  user_id: number | null;
+  name: string;
+  config: AssemblyProfileConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssemblyProfileCreateRequest {
+  name: string;
+  config: AssemblyProfileConfig;
+}
+
+export interface AssemblyProfileUpdateRequest {
+  name?: string;
+  config?: AssemblyProfileConfig;
+}
+
 // Helper type for status badge styling
 export interface StatusConfig {
   label: string;

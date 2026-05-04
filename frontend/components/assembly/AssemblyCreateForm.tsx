@@ -8,10 +8,24 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { createAssembly, getAppSettings, listCustomCitizens } from '@/lib/api';
-import type { AssemblyCreateRequest, RoundPromptConfig, CustomCitizenTemplate } from '@/lib/types';
+import {
+  createAssembly,
+  getAppSettings,
+  listCustomCitizens,
+  listAssemblyProfiles,
+  createAssemblyProfile,
+  updateAssemblyProfile,
+  deleteAssemblyProfile,
+} from '@/lib/api';
+import type {
+  AssemblyCreateRequest,
+  RoundPromptConfig,
+  CustomCitizenTemplate,
+  AssemblyProfile,
+  AssemblyProfileConfig,
+} from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, User } from 'lucide-react';
+import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, User, Save } from 'lucide-react';
 
 const DEFAULT_ROUND_PROMPTS: RoundPromptConfig[] = [
   {
@@ -51,6 +65,18 @@ export function AssemblyCreateForm() {
   const [customCitizens, setCustomCitizens] = useState<CustomCitizenTemplate[]>([]);
   const [selectedCustomIds, setSelectedCustomIds] = useState<Set<number>>(new Set());
 
+  const [profiles, setProfiles] = useState<AssemblyProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+
+  const refreshProfiles = () =>
+    listAssemblyProfiles()
+      .then(setProfiles)
+      .catch(() => {
+        // Profiles API not available
+      });
+
   // Fetch defaults from settings and custom citizens on mount
   useEffect(() => {
     getAppSettings()
@@ -79,7 +105,107 @@ export function AssemblyCreateForm() {
       .catch(() => {
         // Custom citizens API not available
       });
+
+    refreshProfiles();
   }, []);
+
+  const buildConfigFromForm = (): AssemblyProfileConfig => {
+    const hasRoundPrompts = roundPrompts.some((rp) => rp.theme || rp.prompt);
+    const customIds = Array.from(selectedCustomIds);
+    return {
+      num_citizens: formData.num_citizens,
+      num_groups: formData.num_groups,
+      num_rounds: formData.num_rounds,
+      sampling_strategy: formData.sampling_strategy,
+      round_prompts: hasRoundPrompts ? roundPrompts : null,
+      max_research_calls_per_round: formData.max_research_calls_per_round,
+      max_research_tokens_per_call: formData.max_research_tokens_per_call,
+      custom_citizen_ids: customIds.length > 0 ? customIds : null,
+      topic: formData.topic || undefined,
+    };
+  };
+
+  const applyConfig = (config: AssemblyProfileConfig) => {
+    setFormData((prev) => ({
+      ...prev,
+      topic: config.topic ?? prev.topic,
+      num_citizens: config.num_citizens ?? prev.num_citizens,
+      num_groups: config.num_groups ?? prev.num_groups,
+      num_rounds: config.num_rounds ?? prev.num_rounds,
+      sampling_strategy: (config.sampling_strategy ?? prev.sampling_strategy) as
+        | 'stratified'
+        | 'quota'
+        | 'random',
+      max_research_calls_per_round:
+        config.max_research_calls_per_round ?? prev.max_research_calls_per_round,
+      max_research_tokens_per_call:
+        config.max_research_tokens_per_call ?? prev.max_research_tokens_per_call,
+    }));
+    if (config.round_prompts && config.round_prompts.length > 0) {
+      setRoundPrompts(config.round_prompts);
+    }
+    if (config.custom_citizen_ids) {
+      setSelectedCustomIds(new Set(config.custom_citizen_ids));
+    } else {
+      setSelectedCustomIds(new Set());
+    }
+  };
+
+  const handleLoadProfile = (id: number) => {
+    const profile = profiles.find((p) => p.id === id);
+    if (!profile) return;
+    setSelectedProfileId(id);
+    applyConfig(profile.config);
+    setProfileMessage(`Loaded "${profile.name}"`);
+    setTimeout(() => setProfileMessage(null), 2500);
+  };
+
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true);
+    setProfileMessage(null);
+    try {
+      const existing = selectedProfileId
+        ? profiles.find((p) => p.id === selectedProfileId)
+        : null;
+      const defaultName = existing?.name ?? '';
+      const name = window.prompt('Profile name:', defaultName);
+      if (!name || !name.trim()) {
+        setIsSavingProfile(false);
+        return;
+      }
+      const config = buildConfigFromForm();
+      let saved: AssemblyProfile;
+      if (existing && existing.name === name.trim()) {
+        saved = await updateAssemblyProfile(existing.id, { name: name.trim(), config });
+      } else {
+        saved = await createAssemblyProfile({ name: name.trim(), config });
+      }
+      await refreshProfiles();
+      setSelectedProfileId(saved.id);
+      setProfileMessage(`Saved "${saved.name}"`);
+      setTimeout(() => setProfileMessage(null), 2500);
+    } catch (err) {
+      setProfileMessage(err instanceof Error ? err.message : 'Failed to save profile');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleDeleteProfile = async () => {
+    if (!selectedProfileId) return;
+    const profile = profiles.find((p) => p.id === selectedProfileId);
+    if (!profile) return;
+    if (!window.confirm(`Delete profile "${profile.name}"?`)) return;
+    try {
+      await deleteAssemblyProfile(profile.id);
+      await refreshProfiles();
+      setSelectedProfileId(null);
+      setProfileMessage(`Deleted "${profile.name}"`);
+      setTimeout(() => setProfileMessage(null), 2500);
+    } catch (err) {
+      setProfileMessage(err instanceof Error ? err.message : 'Failed to delete profile');
+    }
+  };
 
   // When num_rounds changes, adjust round prompts array
   const numRounds = formData.num_rounds || 3;
@@ -152,6 +278,65 @@ export function AssemblyCreateForm() {
             </div>
           )}
 
+          <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Settings Profile</Label>
+              {profileMessage && (
+                <span className="text-xs text-muted-foreground">{profileMessage}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={selectedProfileId ? String(selectedProfileId) : ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) handleLoadProfile(parseInt(v, 10));
+                  else setSelectedProfileId(null);
+                }}
+                className="flex-1"
+              >
+                <option value="">
+                  {profiles.length === 0 ? 'No saved profiles' : 'Load a profile…'}
+                </option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSaveProfile}
+                disabled={isSavingProfile}
+                title={selectedProfileId ? 'Save (or save as new)' : 'Save current settings as a profile'}
+              >
+                {isSavingProfile ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                <span className="ml-1">Save</span>
+              </Button>
+              {selectedProfileId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDeleteProfile}
+                  className="text-red-500 hover:text-red-700"
+                  title="Delete selected profile"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Save the current settings (prompts, sizes, preset delegates, etc.) as a reusable profile, or load one to populate the form.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="topic">Policy Topic</Label>
             <Textarea
@@ -175,12 +360,12 @@ export function AssemblyCreateForm() {
               <Input
                 id="num_citizens"
                 type="number"
-                min={4}
+                min={2}
                 max={100}
                 value={formData.num_citizens}
                 onChange={(e) => setFormData({ ...formData, num_citizens: parseInt(e.target.value) || 40 })}
               />
-              <p className="text-xs text-muted-foreground">4-100 citizens</p>
+              <p className="text-xs text-muted-foreground">2-100 citizens</p>
             </div>
 
             <div className="space-y-2">

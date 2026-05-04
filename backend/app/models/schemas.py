@@ -79,7 +79,7 @@ class RoundPromptConfig(BaseModel):
 class AssemblyCreateRequest(BaseModel):
     """Request body for creating a new assembly."""
     topic: str = Field(..., min_length=5, max_length=500, description="The policy topic for deliberation")
-    num_citizens: int = Field(default=40, ge=4, le=100, description="Number of citizens to generate")
+    num_citizens: int = Field(default=40, ge=2, le=100, description="Number of citizens to generate")
     num_groups: int = Field(default=5, ge=1, le=10, description="Number of deliberation groups")
     num_rounds: int = Field(default=3, ge=1, le=10, description="Number of deliberation rounds")
     sampling_strategy: str = Field(default="stratified", description="Sampling strategy: stratified, quota, or random")
@@ -337,7 +337,7 @@ class AppSettingsResponse(BaseModel):
 
 class AppSettingsUpdateRequest(BaseModel):
     """Request body for updating application settings. All fields optional."""
-    default_num_citizens: Optional[int] = Field(default=None, ge=4, le=100)
+    default_num_citizens: Optional[int] = Field(default=None, ge=2, le=100)
     default_num_groups: Optional[int] = Field(default=None, ge=1, le=10)
     default_num_rounds: Optional[int] = Field(default=None, ge=1, le=10)
     default_sampling_strategy: Optional[str] = None
@@ -370,6 +370,35 @@ class CustomCitizenUpdateRequest(BaseModel):
     demographic_tags: Optional[list[str]] = None
     political_leaning: Optional[str] = None
     system_prompt: Optional[str] = None
+
+
+# =============================================================================
+# ASSEMBLY PROFILE SCHEMAS
+# =============================================================================
+
+class AssemblyProfileCreateRequest(BaseModel):
+    """Request body for creating a saved assembly settings profile."""
+    name: str = Field(..., min_length=1, max_length=100, description="Profile name")
+    config: dict[str, Any] = Field(..., description="Bundle of assembly creation settings")
+
+
+class AssemblyProfileUpdateRequest(BaseModel):
+    """Request body for updating an assembly settings profile."""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    config: Optional[dict[str, Any]] = None
+
+
+class AssemblyProfileResponse(BaseModel):
+    """Response model for a saved assembly settings profile."""
+    id: int
+    user_id: Optional[int] = None
+    name: str
+    config: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class CustomCitizenTemplateResponse(BaseModel):

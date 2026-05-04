@@ -382,6 +382,31 @@ class CustomCitizenTemplate(Base):
         return f"<CustomCitizenTemplate(id={self.id}, name='{self.name}', mode='{self.mode}')>"
 
 
+class AssemblyProfile(Base):
+    """
+    A saved assembly settings profile.
+
+    Stores a named bundle of assembly creation settings (prompts, sizes,
+    preset delegates, etc.) that the user can load when creating new
+    assemblies.
+    """
+    __tablename__ = "assembly_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    name = Column(String(100), nullable=False)
+    config = Column(JSON, nullable=False)  # Bundle of assembly creation settings
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    owner = relationship("User", foreign_keys=[user_id])
+
+    def __repr__(self):
+        return f"<AssemblyProfile(id={self.id}, name='{self.name}')>"
+
+
 class AppSettings(Base):
     """
     Singleton table for persistent application defaults.

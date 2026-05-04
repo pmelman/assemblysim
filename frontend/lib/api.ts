@@ -21,6 +21,9 @@ import type {
   CustomCitizenTemplate,
   CustomCitizenCreateRequest,
   CustomCitizenUpdateRequest,
+  AssemblyProfile,
+  AssemblyProfileCreateRequest,
+  AssemblyProfileUpdateRequest,
   LoginRequest,
   RegisterRequest,
   TokenResponse,
@@ -412,6 +415,48 @@ export async function updateCustomCitizen(
 
 export async function deleteCustomCitizen(id: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/custom-citizens/${id}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeaders() },
+  });
+  return handleResponse<void>(response);
+}
+
+// =============================================================================
+// ASSEMBLY PROFILE ENDPOINTS
+// =============================================================================
+
+export async function listAssemblyProfiles(): Promise<AssemblyProfile[]> {
+  const response = await fetch(`${API_BASE_URL}/assembly-profiles`, {
+    headers: { ...getAuthHeaders() },
+  });
+  return handleResponse<AssemblyProfile[]>(response);
+}
+
+export async function createAssemblyProfile(
+  request: AssemblyProfileCreateRequest
+): Promise<AssemblyProfile> {
+  const response = await fetch(`${API_BASE_URL}/assembly-profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<AssemblyProfile>(response);
+}
+
+export async function updateAssemblyProfile(
+  id: number,
+  request: AssemblyProfileUpdateRequest
+): Promise<AssemblyProfile> {
+  const response = await fetch(`${API_BASE_URL}/assembly-profiles/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(request),
+  });
+  return handleResponse<AssemblyProfile>(response);
+}
+
+export async function deleteAssemblyProfile(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/assembly-profiles/${id}`, {
     method: 'DELETE',
     headers: { ...getAuthHeaders() },
   });

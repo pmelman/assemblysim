@@ -17,6 +17,7 @@ from app.api.assemblies import router as assemblies_router
 from app.api.websocket import router as websocket_router
 from app.api.settings import router as settings_router
 from app.api.custom_citizens import router as custom_citizens_router
+from app.api.profiles import router as profiles_router
 from app.api.auth import router as auth_router, get_current_user, hash_password
 from app.models.schemas import HealthResponse
 
@@ -159,6 +160,7 @@ app.include_router(auth_router)
 app.include_router(assemblies_router, dependencies=[Depends(get_current_user)])
 app.include_router(settings_router, dependencies=[Depends(get_current_user)])
 app.include_router(custom_citizens_router, dependencies=[Depends(get_current_user)])
+app.include_router(profiles_router, dependencies=[Depends(get_current_user)])
 
 # WebSocket router (authenticates via token query param)
 app.include_router(websocket_router)
