@@ -38,7 +38,8 @@ class CitizenAgent:
         system_prompt: str,
         background_summary: Optional[str] = None,
         key_values: Optional[list[str]] = None,
-        briefing_content: Optional[str] = None
+        briefing_content: Optional[str] = None,
+        model: Optional[str] = None,
     ):
         """
         Initialize a citizen agent.
@@ -50,6 +51,8 @@ class CitizenAgent:
             background_summary: Brief background for display
             key_values: List of core values
             briefing_content: Briefing book content for this assembly
+            model: Optional OpenRouter model ID override; falls back to the
+                citizen-purpose default in get_llm_client when None.
         """
         self.citizen_id = citizen_id
         self.name = name
@@ -61,8 +64,11 @@ class CitizenAgent:
         self._briefing_content = briefing_content
         self._full_system_prompt = self._build_full_system_prompt()
 
-        # Get LLM client configured for citizen responses
-        self.llm = get_llm_client(purpose="citizen")
+        # Get LLM client configured for citizen responses (per-citizen model override allowed)
+        if model:
+            self.llm = get_llm_client(model=model)
+        else:
+            self.llm = get_llm_client(purpose="citizen")
 
     def _build_full_system_prompt(self) -> str:
         """Build the complete system prompt including briefing and instructions."""
@@ -464,5 +470,6 @@ def create_citizen_agent_from_db(citizen, briefing_content: Optional[str] = None
         system_prompt=citizen.system_prompt,
         background_summary=citizen.background_summary,
         key_values=citizen.key_values,
-        briefing_content=briefing_content
+        briefing_content=briefing_content,
+        model=getattr(citizen, "model", None),
     )

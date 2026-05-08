@@ -216,7 +216,8 @@ class DeliberationEngine:
                 system_prompt=citizen.system_prompt,
                 background_summary=citizen.background_summary,
                 key_values=citizen.key_values,
-                briefing_content=self.briefing_content
+                briefing_content=self.briefing_content,
+                model=getattr(citizen, "model", None),
             )
             self.citizen_agents[citizen.id] = agent
 

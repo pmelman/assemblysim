@@ -142,6 +142,9 @@ class Citizen(Base):
     key_values = Column(JSON, nullable=True)  # List of value strings
     demographic_tags = Column(JSON, nullable=True)  # List of tag strings
 
+    # LLM model override (OpenRouter model ID). If null, uses the assembly default.
+    model = Column(String(200), nullable=True)
+
     # Voting
     final_vote = Column(String(50), nullable=True)  # "support", "oppose", "abstain"
     vote_reasoning = Column(Text, nullable=True)
@@ -371,6 +374,10 @@ class CustomCitizenTemplate(Base):
     # Generated or user-provided persona
     system_prompt = Column(Text, nullable=True)
 
+    # LLM model override for this template (OpenRouter ID). If null, falls back
+    # to the assembly default citizen model.
+    model = Column(String(200), nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -424,6 +431,7 @@ class AppSettings(Base):
     default_round_prompts = Column(JSON, nullable=True)
     default_max_research_calls_per_round = Column(Integer, default=2)
     default_max_research_tokens_per_call = Column(Integer, default=2000)
+    default_citizen_model = Column(String(200), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):

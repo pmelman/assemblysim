@@ -11,8 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.models.database import get_db
 from app.models.models import AppSettings
-from app.models.schemas import AppSettingsResponse, AppSettingsUpdateRequest
+from app.models.schemas import (
+    AppSettingsResponse,
+    AppSettingsUpdateRequest,
+    AvailableModelsResponse,
+    ModelOption,
+)
 from app.api.auth import require_admin
+from app.models_catalog import AVAILABLE_MODELS, DEFAULT_CITIZEN_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +56,7 @@ def update_settings(
         "default_num_citizens", "default_num_groups", "default_num_rounds",
         "default_sampling_strategy", "default_round_prompts",
         "default_max_research_calls_per_round", "default_max_research_tokens_per_call",
+        "default_citizen_model",
     }
 
     update_data = request.model_dump(exclude_unset=True)
@@ -70,3 +77,13 @@ def update_settings(
 
     logger.info("Application settings updated")
     return settings
+
+
+@router.get("/models", response_model=AvailableModelsResponse)
+def list_available_models(db: Session = Depends(get_db)):
+    """List the curated LLM model options users can pick from."""
+    settings = _get_or_create_settings(db)
+    return AvailableModelsResponse(
+        models=[ModelOption(**m) for m in AVAILABLE_MODELS],
+        default_citizen_model=settings.default_citizen_model or DEFAULT_CITIZEN_MODEL,
+    )

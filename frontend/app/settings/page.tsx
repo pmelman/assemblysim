@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { ModelSelector } from '@/components/ui/model-selector';
 import { useSettings } from '@/hooks/useSettings';
 import { updateAppSettings } from '@/lib/api';
 import type { RoundPromptConfig } from '@/lib/types';
@@ -40,6 +41,7 @@ export default function SettingsPage() {
   const [roundPrompts, setRoundPrompts] = useState<RoundPromptConfig[]>(DEFAULT_ROUND_PROMPTS);
   const [maxResearchCalls, setMaxResearchCalls] = useState(2);
   const [maxResearchTokens, setMaxResearchTokens] = useState(2000);
+  const [defaultCitizenModel, setDefaultCitizenModel] = useState<string | null>(null);
 
   useEffect(() => {
     if (settings) {
@@ -50,6 +52,7 @@ export default function SettingsPage() {
       setRoundPrompts(settings.default_round_prompts || DEFAULT_ROUND_PROMPTS);
       setMaxResearchCalls(settings.default_max_research_calls_per_round);
       setMaxResearchTokens(settings.default_max_research_tokens_per_call);
+      setDefaultCitizenModel(settings.default_citizen_model);
     }
   }, [settings]);
 
@@ -67,6 +70,7 @@ export default function SettingsPage() {
         default_round_prompts: roundPrompts,
         default_max_research_calls_per_round: maxResearchCalls,
         default_max_research_tokens_per_call: maxResearchTokens,
+        default_citizen_model: defaultCitizenModel,
       });
       mutate();
       setSaved(true);
@@ -176,6 +180,29 @@ export default function SettingsPage() {
                 <option value="random">Random</option>
               </Select>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Citizen LLM Model */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Citizen Model</CardTitle>
+          <CardDescription>
+            Default LLM used by citizen agents during deliberation. Custom citizens
+            with their own model override this.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="default_citizen_model">Default Citizen Model</Label>
+            <ModelSelector
+              id="default_citizen_model"
+              value={defaultCitizenModel}
+              onChange={setDefaultCitizenModel}
+              allowInherit
+              inheritLabel="Use server default (CITIZEN_MODEL env)"
+            />
           </div>
         </CardContent>
       </Card>

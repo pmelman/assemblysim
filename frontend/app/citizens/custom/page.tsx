@@ -24,6 +24,7 @@ import {
   deleteCustomCitizen,
 } from '@/lib/api';
 import type { CustomCitizenTemplate, CustomCitizenCreateRequest } from '@/lib/types';
+import { ModelSelector } from '@/components/ui/model-selector';
 import { Loader2, Plus, Pencil, Trash2, User } from 'lucide-react';
 
 const POLITICAL_LEANINGS = [
@@ -44,6 +45,7 @@ interface CitizenFormData {
   demographic_tags_text: string; // comma-separated
   political_leaning: string;
   system_prompt: string;
+  model: string | null;
 }
 
 const EMPTY_FORM: CitizenFormData = {
@@ -54,6 +56,7 @@ const EMPTY_FORM: CitizenFormData = {
   demographic_tags_text: '',
   political_leaning: '',
   system_prompt: '',
+  model: null,
 };
 
 function formDataToRequest(form: CitizenFormData): CustomCitizenCreateRequest {
@@ -74,6 +77,7 @@ function formDataToRequest(form: CitizenFormData): CustomCitizenCreateRequest {
     demographic_tags: tags.length > 0 ? tags : null,
     political_leaning: form.political_leaning || null,
     system_prompt: form.mode === 'full' ? form.system_prompt : null,
+    model: form.model || null,
   };
 }
 
@@ -86,6 +90,7 @@ function templateToFormData(t: CustomCitizenTemplate): CitizenFormData {
     demographic_tags_text: (t.demographic_tags || []).join(', '),
     political_leaning: t.political_leaning || '',
     system_prompt: t.system_prompt || '',
+    model: t.model,
   };
 }
 
@@ -230,6 +235,11 @@ export default function CustomCitizensPage() {
                       {citizen.political_leaning && (
                         <Badge variant="outline">{citizen.political_leaning}</Badge>
                       )}
+                      {citizen.model && (
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {citizen.model}
+                        </Badge>
+                      )}
                     </div>
                     {citizen.background_summary && (
                       <p className="text-sm text-muted-foreground">
@@ -320,6 +330,17 @@ export default function CustomCitizensPage() {
                 placeholder="e.g., Maria Rodriguez"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="citizen-model">LLM Model</Label>
+              <ModelSelector
+                id="citizen-model"
+                value={formData.model}
+                onChange={(v) => setFormData({ ...formData, model: v })}
+                allowInherit
+                inheritLabel="Inherit assembly default"
               />
             </div>
 

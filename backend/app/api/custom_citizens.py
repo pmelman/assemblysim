@@ -161,6 +161,7 @@ async def create_custom_citizen(
         demographic_tags=request.demographic_tags,
         political_leaning=request.political_leaning,
         system_prompt=system_prompt,
+        model=request.model,
     )
     db.add(template)
     db.commit()
@@ -243,7 +244,7 @@ async def update_custom_citizen(
 
     UPDATABLE_FIELDS = {
         "name", "mode", "background_summary", "key_values",
-        "demographic_tags", "political_leaning", "system_prompt",
+        "demographic_tags", "political_leaning", "system_prompt", "model",
     }
 
     for field, value in update_data.items():

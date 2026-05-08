@@ -329,6 +329,7 @@ class AppSettingsResponse(BaseModel):
     default_round_prompts: Optional[list[dict[str, str]]] = None
     default_max_research_calls_per_round: int = 2
     default_max_research_tokens_per_call: int = 2000
+    default_citizen_model: Optional[str] = None
     updated_at: Optional[datetime] = None
 
     class Config:
@@ -344,6 +345,7 @@ class AppSettingsUpdateRequest(BaseModel):
     default_round_prompts: Optional[list[RoundPromptConfig]] = None
     default_max_research_calls_per_round: Optional[int] = Field(default=None, ge=0, le=10)
     default_max_research_tokens_per_call: Optional[int] = Field(default=None, ge=500, le=8000)
+    default_citizen_model: Optional[str] = Field(default=None, max_length=200)
 
 
 # =============================================================================
@@ -359,6 +361,7 @@ class CustomCitizenCreateRequest(BaseModel):
     demographic_tags: Optional[list[str]] = Field(default=None, description="Demographic tags")
     political_leaning: Optional[str] = Field(default=None, description="Political leaning (e.g. liberal, moderate, conservative)")
     system_prompt: Optional[str] = Field(default=None, description="Full persona system prompt (required for 'full' mode)")
+    model: Optional[str] = Field(default=None, max_length=200, description="OpenRouter model ID; null inherits the assembly default")
 
 
 class CustomCitizenUpdateRequest(BaseModel):
@@ -370,6 +373,7 @@ class CustomCitizenUpdateRequest(BaseModel):
     demographic_tags: Optional[list[str]] = None
     political_leaning: Optional[str] = None
     system_prompt: Optional[str] = None
+    model: Optional[str] = Field(default=None, max_length=200)
 
 
 # =============================================================================
@@ -412,8 +416,21 @@ class CustomCitizenTemplateResponse(BaseModel):
     demographic_tags: Optional[list[str]] = None
     political_leaning: Optional[str] = None
     system_prompt: Optional[str] = None
+    model: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ModelOption(BaseModel):
+    """A selectable LLM model in the admin UI."""
+    id: str
+    label: str
+
+
+class AvailableModelsResponse(BaseModel):
+    """Response listing curated model options."""
+    models: list[ModelOption]
+    default_citizen_model: Optional[str] = None

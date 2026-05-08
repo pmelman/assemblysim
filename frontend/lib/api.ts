@@ -17,6 +17,7 @@ import type {
   RoundResearchResponse,
   AppSettings,
   AppSettingsUpdateRequest,
+  AvailableModelsResponse,
   ErrorResponse,
   CustomCitizenTemplate,
   CustomCitizenCreateRequest,
@@ -350,6 +351,13 @@ export async function updateAppSettings(
     body: JSON.stringify(request),
   });
   return handleResponse<AppSettings>(response);
+}
+
+export async function listAvailableModels(): Promise<AvailableModelsResponse> {
+  const response = await fetch(`${API_BASE_URL}/settings/models`, {
+    headers: { ...getAuthHeaders() },
+  });
+  return handleResponse<AvailableModelsResponse>(response);
 }
 
 // =============================================================================

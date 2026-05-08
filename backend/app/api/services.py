@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.models.database import get_db_session
 from app.models.models import (
     Assembly, Citizen, DeliberationGroup, BriefingBook, AssemblyStatus,
-    CustomCitizenTemplate
+    CustomCitizenTemplate, AppSettings
 )
 from app.citizen_forge.sampler import StratifiedSampler
 from app.citizen_forge.persona_generator import PersonaGenerator
@@ -62,6 +62,13 @@ async def create_assembly_with_citizens(
                     "message": "Starting citizen generation..."
                 })
 
+        # Resolve the assembly-wide default citizen model (admin setting)
+        with get_db_session() as db:
+            app_settings = db.query(AppSettings).filter(AppSettings.id == 1).first()
+            default_citizen_model = (
+                app_settings.default_citizen_model if app_settings else None
+            )
+
         # Load custom citizen templates if provided
         custom_templates = []
         if custom_citizen_ids:
@@ -76,6 +83,7 @@ async def create_assembly_with_citizens(
                     "background_summary": t.background_summary,
                     "key_values": t.key_values or [],
                     "demographic_tags": t.demographic_tags or [],
+                    "model": t.model,
                 } for t in custom_templates]
 
             logger.info(f"Loaded {len(custom_templates)} custom citizen templates")
@@ -153,7 +161,8 @@ async def create_assembly_with_citizens(
                     demographic_tags=persona.get("demographic_tags", []),
                     gss_data=persona.get("gss_data"),
                     gss_row_id=persona.get("gss_data", {}).get("id"),
-                    gss_year=persona.get("gss_data", {}).get("year")
+                    gss_year=persona.get("gss_data", {}).get("year"),
+                    model=persona.get("model") or default_citizen_model,
                 )
                 db.add(citizen)
 

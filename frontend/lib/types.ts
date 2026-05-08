@@ -266,6 +266,7 @@ export interface AppSettings {
   default_round_prompts: RoundPromptConfig[] | null;
   default_max_research_calls_per_round: number;
   default_max_research_tokens_per_call: number;
+  default_citizen_model: string | null;
   updated_at: string | null;
 }
 
@@ -277,6 +278,17 @@ export interface AppSettingsUpdateRequest {
   default_round_prompts?: RoundPromptConfig[] | null;
   default_max_research_calls_per_round?: number;
   default_max_research_tokens_per_call?: number;
+  default_citizen_model?: string | null;
+}
+
+export interface ModelOption {
+  id: string;
+  label: string;
+}
+
+export interface AvailableModelsResponse {
+  models: ModelOption[];
+  default_citizen_model: string | null;
 }
 
 export interface WSStatusUpdate {
@@ -325,6 +337,7 @@ export interface CustomCitizenTemplate {
   demographic_tags: string[] | null;
   political_leaning: string | null;
   system_prompt: string | null;
+  model: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -337,6 +350,7 @@ export interface CustomCitizenCreateRequest {
   demographic_tags?: string[] | null;
   political_leaning?: string | null;
   system_prompt?: string | null;
+  model?: string | null;
 }
 
 export interface CustomCitizenUpdateRequest {
@@ -347,6 +361,7 @@ export interface CustomCitizenUpdateRequest {
   demographic_tags?: string[] | null;
   political_leaning?: string | null;
   system_prompt?: string | null;
+  model?: string | null;
 }
 
 // =============================================================================
